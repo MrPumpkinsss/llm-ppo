@@ -221,3 +221,70 @@ def log_prob_of_order(
         available.remove(order[step].item())
 
     return torch.stack(log_probs).sum()
+
+
+def ppo_v2_inference(
+    network: DeviceOrderNetwork,
+    obs: torch.Tensor,
+    device_features: torch.Tensor,
+    num_devices: int,
+    num_layers: int,
+    devices,
+    layers,
+    tensor_size: float = 1.0,
+) -> Tuple[list, float]:
+    """PPO-v2 inference: try multiple orderings with DP auto-skip, return best partition.
+
+    This function is the canonical PPO-v2 inference: PPO outputs device orderings,
+    DP with auto-skip decides how many devices to actually use. Multiple candidate
+    orderings are tried and the best TPOT is selected.
+
+    Args:
+        network: trained DeviceOrderNetwork
+        obs: (1, obs_dim) observation tensor
+        device_features: (1, num_devices, 4) per-device features
+        num_devices: number of devices in this config
+        num_layers: number of layers
+        devices: DeviceCluster instance
+        layers: LayerModel instance
+        tensor_size: activation tensor size (GB)
+
+    Returns:
+        best_partition: optimal layer-to-device assignment
+        best_tpot: TPOT of the best partition
+    """
+    from environment import compute_simple_tpot
+
+    candidates = []
+
+    with torch.no_grad():
+        # 1. PPO greedy ordering
+        order_logits, _ = network.forward(obs, num_devices, device_features)
+        order, _, _ = generate_device_order(order_logits.squeeze(0), num_devices)
+        order_list = order.tolist()
+        part = dp_for_device_order(num_layers, order_list, devices, layers, tensor_size)
+        candidates.append((compute_simple_tpot(part, devices, layers, tensor_size), part))
+
+        # 2. Compute power descending
+        sort_desc = sorted(range(num_devices), key=lambda d: devices.compute_power[d], reverse=True)
+        part_desc = dp_for_device_order(num_layers, sort_desc, devices, layers, tensor_size)
+        candidates.append((compute_simple_tpot(part_desc, devices, layers, tensor_size), part_desc))
+
+        # 3. Compute power ascending
+        sort_asc = sorted(range(num_devices), key=lambda d: devices.compute_power[d])
+        part_asc = dp_for_device_order(num_layers, sort_asc, devices, layers, tensor_size)
+        candidates.append((compute_simple_tpot(part_asc, devices, layers, tensor_size), part_asc))
+
+        # 4. Top-3 PPO prefixes (PPO's top choices as first device)
+        probs = torch.softmax(order_logits.squeeze(0)[:num_devices], dim=-1)
+        top3 = torch.topk(probs, min(3, num_devices)).indices.tolist()
+        for d1 in top3:
+            remaining = [d for d in range(num_devices) if d != d1]
+            for d2 in remaining[:3]:
+                rest = [d for d in range(num_devices) if d not in [d1, d2]]
+                order = [d1, d2] + rest
+                part = dp_for_device_order(num_layers, order, devices, layers, tensor_size)
+                candidates.append((compute_simple_tpot(part, devices, layers, tensor_size), part))
+
+    best_tpot, best_partition = min(candidates, key=lambda x: x[0])
+    return best_partition, best_tpot

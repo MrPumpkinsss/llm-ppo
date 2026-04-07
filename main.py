@@ -67,11 +67,19 @@ def main():
         print(f"Total training time: {total_time:.1f}s ({total_time/60:.1f} min)")
         print(f"{'='*60}")
 
-        # Save models
+        # Save models and metrics
         os.makedirs(args.output_dir, exist_ok=True)
         torch.save(network_v1.state_dict(), os.path.join(args.output_dir, 'ppo_v1_model.pt'))
         torch.save(network_v2.state_dict(), os.path.join(args.output_dir, 'ppo_v2_model.pt'))
-        print(f"Models saved to {args.output_dir}")
+
+        # Save metrics for training curves
+        metrics_save = {
+            'v1': {k: getattr(metrics_v1, k, []) for k in dir(metrics_v1) if not k.startswith('_')},
+            'v2': {k: getattr(metrics_v2, k, []) for k in dir(metrics_v2) if not k.startswith('_')},
+        }
+        with open(os.path.join(args.output_dir, 'training_metrics.json'), 'w') as f:
+            json.dump(metrics_save, f)
+        print(f"Models and metrics saved to {args.output_dir}")
     else:
         # Load models
         network_v1_file = os.path.join(args.output_dir, 'ppo_v1_model.pt')
@@ -99,7 +107,38 @@ def main():
         ).to(device)
         network_v2.load_state_dict(torch.load(network_v2_file, map_location=device))
 
-        metrics_v1 = metrics_v2 = None
+        # Load training metrics
+        metrics_file = os.path.join(args.output_dir, 'training_metrics.json')
+        if os.path.exists(metrics_file):
+            from train import TrainingMetrics
+            with open(metrics_file) as f:
+                metrics_save = json.load(f)
+            metrics_v1 = TrainingMetrics(
+                episode_rewards=metrics_save['v1'].get('episode_rewards', []),
+                episode_tpot=metrics_save['v1'].get('episode_tpot', []),
+                policy_losses=metrics_save['v1'].get('policy_losses', []),
+                value_losses=metrics_save['v1'].get('value_losses', []),
+                entropies=metrics_save['v1'].get('entropies', []),
+                eval_rewards=metrics_save['v1'].get('eval_rewards', []),
+                eval_tpot=metrics_save['v1'].get('eval_tpot', []),
+                dp_tpot=metrics_save['v1'].get('dp_tpot', []),
+                greedy_tpot=metrics_save['v1'].get('greedy_tpot', []),
+                wall_time=metrics_save['v1'].get('wall_time', []),
+            )
+            metrics_v2 = TrainingMetrics(
+                episode_rewards=metrics_save['v2'].get('episode_rewards', []),
+                episode_tpot=metrics_save['v2'].get('episode_tpot', []),
+                policy_losses=metrics_save['v2'].get('policy_losses', []),
+                value_losses=metrics_save['v2'].get('value_losses', []),
+                entropies=metrics_save['v2'].get('entropies', []),
+                eval_rewards=metrics_save['v2'].get('eval_rewards', []),
+                eval_tpot=metrics_save['v2'].get('eval_tpot', []),
+                dp_tpot=metrics_save['v2'].get('dp_tpot', []),
+                greedy_tpot=metrics_save['v2'].get('greedy_tpot', []),
+                wall_time=metrics_save['v2'].get('wall_time', []),
+            )
+        else:
+            metrics_v1 = metrics_v2 = None
 
     # ====== EVALUATION ======
     print("\n" + "=" * 60)

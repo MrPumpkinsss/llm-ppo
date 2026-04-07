@@ -401,13 +401,13 @@ def plot_pipeline_parallel(
     lys: LayerModel,
     tensor_size: float,
     output_dir: str = "results",
-    num_microbatches: int = 4,
+    num_tokens: int = 12,
 ):
-    """Visualize pipeline parallel execution across ALL devices (including unused).
+    """Autoregressive single-sequence token generation (1F1B pipeline).
 
-    - All device rows are shown, idle devices are clearly marked
-    - Compute blocks per micro-batch
-    - Transfer blocks between stages (network latency)
+    Fill phase: each stage processes its first token sequentially.
+    Steady state: bottleneck stage is always busy, pipeline produces 1 token
+    every max_stage_time (no bubbles after fill).
     """
     partitions = {
         'DP': result.dp_partition,
@@ -415,19 +415,8 @@ def plot_pipeline_parallel(
         'PPO-v2': result.ppo_v2_partition,
         'Greedy': result.greedy_partition,
     }
-
     nd = result.num_devices
 
-    # Pre-compute max time across all algorithms
-    max_time = 0.0
-    for name, partition in partitions.items():
-        pipeline_info = compute_pipeline_tpot(partition, devs, lys, tensor_size, num_microbatches)
-        startup = sum(pipeline_info['stage_times']) + pipeline_info['transfer_overhead'] * len(pipeline_info['stage_times'])
-        total = startup + (num_microbatches - 1) * (pipeline_info['max_stage_time'] + pipeline_info['transfer_overhead'])
-        max_time = max(max_time, total)
-    max_time *= 1.05
-
-    # Helpers
     def get_stages(partition):
         stages = []
         cur_dev = partition[0]
@@ -442,30 +431,23 @@ def plot_pipeline_parallel(
         stages.append((cur_dev, cur_layers[:]))
         return stages
 
-    def get_stage_details(partition, stages):
-        details = []
+    # Pre-compute max_time for consistent x-axis
+    max_time = 0.0
+    for name, partition in partitions.items():
+        stages = get_stages(partition)
         stage_devs = [s[0] for s in stages]
-        prev_time = 0.0
-        for si, (dev_id, layer_indices) in enumerate(stages):
-            total_cost = sum(lys.compute_costs[l] for l in layer_indices)
-            stage_time = total_cost / devs.compute_power[dev_id]
-            transfer_in = 0.0
-            if si > 0:
-                from_dev = stage_devs[si - 1]
-                to_dev = stage_devs[si]
-                transfer_in = devs.transfer_time(from_dev, to_dev, tensor_size)
-            details.append({
-                'dev_id': dev_id,
-                'layer_indices': layer_indices,
-                'stage_time': stage_time,
-                'transfer_in': transfer_in,
-                'start_time': prev_time + transfer_in if si > 0 else 0.0,
-            })
-            prev_time = details[-1]['start_time'] + stage_time
-        return details
+        stage_times = [sum(lys.compute_costs[l] for l in s[1]) / devs.compute_power[s[0]]
+                      for s in stages]
+        transfers = [devs.transfer_time(stage_devs[i], stage_devs[i+1], tensor_size)
+                     for i in range(len(stages) - 1)]
+        transfer_total = sum(transfers)
+        max_st = max(stage_times) if stage_times else 1.0
+        fill = sum(stage_times) + transfer_total * len(stages)
+        total = fill + (num_tokens - 1) * (max_st + transfer_total)
+        max_time = max(max_time, total)
+    max_time *= 1.05
 
-    fig, all_axes = plt.subplots(len(partitions), 1, figsize=(22, 5.5 * len(partitions)))
-
+    fig, all_axes = plt.subplots(len(partitions), 1, figsize=(24, 6 * len(partitions)))
     stage_colors = plt.cm.tab10(np.linspace(0, 1, nd))
     transfer_color = '#888888'
     idle_color = '#f0f0f0'
@@ -474,81 +456,122 @@ def plot_pipeline_parallel(
         ax = all_axes[row] if len(partitions) > 1 else all_axes
 
         stages = get_stages(partition)
-        stage_details = get_stage_details(partition, stages)
-        pipeline_info = compute_pipeline_tpot(partition, devs, lys, tensor_size, num_microbatches)
-        used_devs = set(d['dev_id'] for d in stage_details)
+        stage_devs = [s[0] for s in stages]
+        stage_times = [sum(lys.compute_costs[l] for l in s[1]) / devs.compute_power[s[0]]
+                      for s in stages]
+        transfers = [devs.transfer_time(stage_devs[i], stage_devs[i+1], tensor_size)
+                     for i in range(len(stages) - 1)]
+        transfer_total = sum(transfers)
+        max_stage_time = max(stage_times)
+        bottleneck_dev = stage_devs[stage_times.index(max_stage_time)]
+        used_devs = set(stage_devs)
         num_idle = nd - len(used_devs)
 
-        # Draw idle background for ALL devices
+        # Idle background for all devices
         for dev_id in range(nd):
             ax.barh(dev_id, max_time, left=0, color=idle_color,
                    edgecolor='#cccccc', linewidth=0.5)
 
-        # Draw compute + transfer blocks per active device
         used_colors = {}
-        for si, detail in enumerate(stage_details):
-            dev_id = detail['dev_id']
-            stage_time = detail['stage_time']
-            stage_start = detail['start_time']
-            transfer_in = detail['transfer_in']
+
+        # Per-device compute event list: (start, end, token_idx)
+        dev_events = {dev_id: [] for dev_id in range(nd)}
+
+        # Fill phase (token 0 flows through pipeline sequentially)
+        cur_time = 0.0
+        for si, (dev_id, layer_indices) in enumerate(stages):
+            st = stage_times[si]
+            dev_events[dev_id].append((cur_time, cur_time + st, 0))
+            cur_time += st
+            if si < len(stages) - 1:
+                cur_time += transfers[si]
+        fill_time = cur_time
+
+        # Steady state (tokens 1 to num_tokens-1)
+        for tok in range(1, num_tokens):
+            for si, (dev_id, layer_indices) in enumerate(stages):
+                st = stage_times[si]
+                if si == 0:
+                    # Stage 0: computes continuously, each token takes st
+                    start = dev_events[dev_id][-1][1] if dev_events[dev_id] else 0.0
+                    end = start + st
+                    dev_events[dev_id].append((start, end, tok))
+                else:
+                    # Wait for previous stage's same token, then transfer, then compute
+                    prev_dev = stage_devs[si - 1]
+                    prev_events = dev_events[prev_dev]
+                    # Find when prev_dev finishes token tok (index tok in the list)
+                    if tok < len(prev_events):
+                        prev_end = prev_events[tok][1]
+                    else:
+                        prev_end = prev_events[-1][1] if prev_events else 0.0
+                    start = prev_end + transfers[si - 1]
+                    end = start + st
+                    dev_events[dev_id].append((start, end, tok))
+
+        # Draw compute blocks
+        for si, (dev_id, layer_indices) in enumerate(stages):
             color = stage_colors[si % len(stage_colors)]
             used_colors[si] = color
+            events = dev_events[dev_id]
 
-            # Transfer block
-            if si > 0 and transfer_in > 0:
-                t_start = stage_start - transfer_in
-                ax.barh(dev_id, transfer_in, left=t_start,
-                       color=transfer_color, edgecolor='black', linewidth=0.5,
-                       alpha=0.6, hatch='///')
-                ax.text(t_start + transfer_in / 2, dev_id,
-                       f'T{si}', ha='center', va='center', fontsize=6,
-                       color='white', fontweight='bold')
+            for (start, end, tok) in events:
+                if start >= max_time:
+                    break
+                ax.barh(dev_id, end - start, left=start,
+                       color=color, edgecolor='black', linewidth=0.3, alpha=0.85)
+                label = f'T{tok}' if tok > 0 else 'Fill'
+                ax.text(start + (end - start) / 2, dev_id,
+                       label, ha='center', va='center', fontsize=5.5, fontweight='bold')
 
-            # Compute blocks per micro-batch — each MB starts right after previous finishes on this device
-            for mb in range(num_microbatches):
-                mb_offset = mb * stage_time
-                start = stage_start + mb_offset
-                ax.barh(dev_id, stage_time, left=start,
-                       color=color, edgecolor='black', linewidth=0.5, alpha=0.85)
-                ax.text(start + stage_time / 2, dev_id,
-                       f'MB{mb}', ha='center', va='center', fontsize=6, fontweight='bold')
+            # Transfer blocks between stages
+            if si > 0:
+                transfer_dur = transfers[si - 1]
+                for tok in range(1, num_tokens):
+                    if tok < len(dev_events[dev_id]):
+                        prev_end = dev_events[stage_devs[si - 1]][tok][1]
+                        t_start = prev_end
+                        ax.barh(dev_id, transfer_dur, left=t_start,
+                               color=transfer_color, edgecolor='black', linewidth=0.3,
+                               alpha=0.45, hatch='///')
+
+        # TPOT = time per token in steady state
+        tpot = max_stage_time + transfer_total
 
         # Legend
         handles = []
         for si, color in used_colors.items():
-            d = stage_details[si]
-            patch = mpatches.Patch(
-                color=color,
-                label=f'Stage {si} (Dev {d["dev_id"]}, {len(d["layer_indices"])}L)'
-            )
+            d = stages[si]
+            patch = mpatches.Patch(color=color,
+                label=f'Stage {si} (Dev {d[0]}, {len(d[1])}L, {stage_times[si]:.2f}s)')
             handles.append(patch)
-        handles.append(mpatches.Patch(
-            color=transfer_color, alpha=0.6, hatch='///',
-            label='Transfer (network latency)'
-        ))
+        handles.append(mpatches.Patch(color=transfer_color, alpha=0.45, hatch='///',
+            label=f'Transfer (total={transfer_total:.2f}s)'))
         if num_idle > 0:
-            handles.append(mpatches.Patch(
-                facecolor=idle_color, edgecolor='#cccccc', linewidth=1,
-                label=f'Idle ({num_idle} device{"s" if num_idle > 1 else ""})'
-            ))
+            handles.append(mpatches.Patch(facecolor=idle_color, edgecolor='#cccccc', linewidth=1,
+                label=f'Idle ({num_idle} device{"s" if num_idle > 1 else ""})'))
 
         ax.set_yticks(range(nd))
         ax.set_yticklabels([f'Dev {i}' for i in range(nd)], fontsize=9)
-        ax.set_xlim(-0.04 * max_time, max_time * 1.02)
-        ax.set_xlabel('Time (arbitrary units)', fontsize=10)
+        ax.set_xlim(-0.015 * max_time, max_time * 1.02)
+        ax.set_xlabel('Time (s)', fontsize=10)
         ax.set_title(
-            f'{name}: TPOT={pipeline_info["tpot"]:.4f} | '
-            f'Bubble={pipeline_info["bubble_fraction"]*100:.1f}% | '
-            f'{len(stages)} stage(s), {num_idle} idle',
+            f'{name}: TPOT={tpot:.4f}s | Bottleneck=Dev {bottleneck_dev} '
+            f'({max_stage_time:.2f}s) | {len(stages)} stages, {num_idle} idle',
             fontsize=11, fontweight='bold'
         )
         ax.legend(handles=handles, loc='upper right', fontsize=7, ncol=2)
         ax.grid(True, alpha=0.3, axis='x')
         ax.set_ylabel('Device', fontsize=10)
 
+        # Fill phase boundary line
+        ax.axvline(x=fill_time, color='red', linestyle='--', linewidth=1.5, alpha=0.7)
+        ax.text(fill_time, -0.3, f'Fill={fill_time:.1f}s', color='red',
+               fontsize=7, ha='right', va='top', alpha=0.8)
+
     plt.suptitle(
-        f'Pipeline Parallel Visualization - Test #{result.test_id} '
-        f'({result.num_layers}L x {result.num_devices}D, {num_microbatches} microbatches)',
+        f'Autoregressive Token Generation - Test #{result.test_id} '
+        f'({result.num_layers}L x {result.num_devices}D, {num_tokens} tokens)',
         fontsize=14, fontweight='bold'
     )
     plt.tight_layout()

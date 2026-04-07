@@ -35,7 +35,7 @@ class TrainConfig:
     v1_entropy_coef: float = 0.01
     v1_value_coef: float = 0.5
     v1_max_grad_norm: float = 0.5
-    v1_num_episodes: int = 15000
+    v1_num_episodes: int = 45000
     v1_steps_per_episode: int = 1  # single step per episode
 
     # PPO-v2: device ordering + DP
@@ -50,14 +50,14 @@ class TrainConfig:
     v2_entropy_coef: float = 0.01
     v2_value_coef: float = 0.5
     v2_max_grad_norm: float = 0.5
-    v2_num_episodes: int = 15000
+    v2_num_episodes: int = 45000
     v2_steps_per_episode: int = 1
 
     # General
     seed: int = 42
     eval_interval: int = 500
     num_eval_configs: int = 100     # Number of random configs per evaluation
-    max_training_minutes: float = 58.0  # Leave margin under 60 min
+    max_training_minutes: float = 120.0  # 2-hour hard limit
     device: str = "cuda"            # "cuda" or "cpu"
 
     @property

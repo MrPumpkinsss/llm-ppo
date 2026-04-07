@@ -431,22 +431,6 @@ def plot_pipeline_parallel(
         stages.append((cur_dev, cur_layers[:]))
         return stages
 
-    # Pre-compute max_time for consistent x-axis
-    max_time = 0.0
-    for name, partition in partitions.items():
-        stages = get_stages(partition)
-        stage_devs = [s[0] for s in stages]
-        stage_times = [sum(lys.compute_costs[l] for l in s[1]) / devs.compute_power[s[0]]
-                      for s in stages]
-        transfers = [devs.transfer_time(stage_devs[i], stage_devs[i+1], tensor_size)
-                     for i in range(len(stages) - 1)]
-        transfer_total = sum(transfers)
-        max_st = max(stage_times) if stage_times else 1.0
-        fill = sum(stage_times) + transfer_total * len(stages)
-        total = fill + (num_tokens - 1) * (max_st + transfer_total)
-        max_time = max(max_time, total)
-    max_time *= 1.05
-
     fig, all_axes = plt.subplots(len(partitions), 1, figsize=(24, 6 * len(partitions)))
     stage_colors = plt.cm.tab10(np.linspace(0, 1, nd))
     transfer_color = '#888888'
@@ -466,11 +450,6 @@ def plot_pipeline_parallel(
         bottleneck_dev = stage_devs[stage_times.index(max_stage_time)]
         used_devs = set(stage_devs)
         num_idle = nd - len(used_devs)
-
-        # Idle background for all devices
-        for dev_id in range(nd):
-            ax.barh(dev_id, max_time, left=0, color=idle_color,
-                   edgecolor='#cccccc', linewidth=0.5)
 
         used_colors = {}
 
@@ -492,15 +471,12 @@ def plot_pipeline_parallel(
             for si, (dev_id, layer_indices) in enumerate(stages):
                 st = stage_times[si]
                 if si == 0:
-                    # Stage 0: computes continuously, each token takes st
                     start = dev_events[dev_id][-1][1] if dev_events[dev_id] else 0.0
                     end = start + st
                     dev_events[dev_id].append((start, end, tok))
                 else:
-                    # Wait for previous stage's same token, then transfer, then compute
                     prev_dev = stage_devs[si - 1]
                     prev_events = dev_events[prev_dev]
-                    # Find when prev_dev finishes token tok (index tok in the list)
                     if tok < len(prev_events):
                         prev_end = prev_events[tok][1]
                     else:
@@ -509,6 +485,17 @@ def plot_pipeline_parallel(
                     end = start + st
                     dev_events[dev_id].append((start, end, tok))
 
+        # Compute end_time from actual events (per-algorithm)
+        end_time = 0.0
+        for dev_id in range(nd):
+            for (_, end, _) in dev_events[dev_id]:
+                end_time = max(end_time, end)
+
+        # Idle background for all devices (per-algorithm extent)
+        for dev_id in range(nd):
+            ax.barh(dev_id, end_time, left=0, color=idle_color,
+                   edgecolor='#cccccc', linewidth=0.5)
+
         # Draw compute blocks
         for si, (dev_id, layer_indices) in enumerate(stages):
             color = stage_colors[si % len(stage_colors)]
@@ -516,8 +503,6 @@ def plot_pipeline_parallel(
             events = dev_events[dev_id]
 
             for (start, end, tok) in events:
-                if start >= max_time:
-                    break
                 ax.barh(dev_id, end - start, left=start,
                        color=color, edgecolor='black', linewidth=0.3, alpha=0.85)
                 label = f'T{tok}' if tok > 0 else 'Fill'
@@ -543,21 +528,21 @@ def plot_pipeline_parallel(
         for si, color in used_colors.items():
             d = stages[si]
             patch = mpatches.Patch(color=color,
-                label=f'Stage {si} (Dev {d[0]}, {len(d[1])}L, {stage_times[si]:.2f}s)')
+                label=f'Stage {si} (Dev {d[0]}, {len(d[1])}L, {stage_times[si]:.2f})')
             handles.append(patch)
         handles.append(mpatches.Patch(color=transfer_color, alpha=0.45, hatch='///',
-            label=f'Transfer (total={transfer_total:.2f}s)'))
+            label=f'Transfer (total={transfer_total:.2f})'))
         if num_idle > 0:
             handles.append(mpatches.Patch(facecolor=idle_color, edgecolor='#cccccc', linewidth=1,
                 label=f'Idle ({num_idle} device{"s" if num_idle > 1 else ""})'))
 
         ax.set_yticks(range(nd))
         ax.set_yticklabels([f'Dev {i}' for i in range(nd)], fontsize=9)
-        ax.set_xlim(-0.015 * max_time, max_time * 1.02)
-        ax.set_xlabel('Time (s)', fontsize=10)
+        ax.set_xlim(-0.015 * end_time, end_time * 1.02)
+        ax.set_xlabel('Time', fontsize=10)
         ax.set_title(
-            f'{name}: TPOT={tpot:.4f}s | Bottleneck=Dev {bottleneck_dev} '
-            f'({max_stage_time:.2f}s) | {len(stages)} stages, {num_idle} idle',
+            f'{name}: TPOT={tpot:.4f} | Bottleneck=Dev {bottleneck_dev} '
+            f'({max_stage_time:.2f}) | {len(stages)} stages, {num_idle} idle',
             fontsize=11, fontweight='bold'
         )
         ax.legend(handles=handles, loc='upper right', fontsize=7, ncol=2)
@@ -566,7 +551,7 @@ def plot_pipeline_parallel(
 
         # Fill phase boundary line
         ax.axvline(x=fill_time, color='red', linestyle='--', linewidth=1.5, alpha=0.7)
-        ax.text(fill_time, -0.3, f'Fill={fill_time:.1f}s', color='red',
+        ax.text(fill_time, -0.3, f'Fill={fill_time:.1f}', color='red',
                fontsize=7, ha='right', va='top', alpha=0.8)
 
     plt.suptitle(

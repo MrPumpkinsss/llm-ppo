@@ -206,96 +206,143 @@ def run_evaluation(
 
 
 def plot_training_curves(metrics_v1, metrics_v2, output_dir: str):
-    """Plot training curves: reward, TPOT, policy loss, value loss."""
+    """Plot training curves for PPO-v1 and PPO-v2."""
     if metrics_v1 is None and metrics_v2 is None:
         print(f"Skipping training curves (no metrics available in eval-only mode)")
         return
-    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
 
-    # Smooth helper
+    fig, axes = plt.subplots(3, 3, figsize=(18, 14))
+
     def smooth(data, window=50):
         if len(data) < window:
             return data
         return np.convolve(data, np.ones(window)/window, mode='valid')
 
-    # Episode rewards
+    # Row 0: Training metrics
+    # Col 0: Episode rewards
     ax = axes[0, 0]
     if metrics_v1.episode_rewards:
-        ax.plot(smooth(metrics_v1.episode_rewards), alpha=0.8, label='PPO-v1')
+        ax.plot(smooth(metrics_v1.episode_rewards), alpha=0.8, label='PPO-v1', color='steelblue')
     if metrics_v2.episode_rewards:
-        ax.plot(smooth(metrics_v2.episode_rewards), alpha=0.8, label='PPO-v2')
+        ax.plot(smooth(metrics_v2.episode_rewards), alpha=0.8, label='PPO-v2', color='forestgreen')
     ax.set_xlabel('Episode')
     ax.set_ylabel('Reward (negative TPOT)')
     ax.set_title('Training Reward')
     ax.legend()
     ax.grid(True, alpha=0.3)
 
-    # Episode TPOT
+    # Col 1: Episode TPOT
     ax = axes[0, 1]
     if metrics_v1.episode_tpot:
-        ax.plot(smooth(metrics_v1.episode_tpot), alpha=0.8, label='PPO-v1')
+        ax.plot(smooth(metrics_v1.episode_tpot), alpha=0.8, label='PPO-v1', color='steelblue')
     if metrics_v2.episode_tpot:
-        ax.plot(smooth(metrics_v2.episode_tpot), alpha=0.8, label='PPO-v2')
+        ax.plot(smooth(metrics_v2.episode_tpot), alpha=0.8, label='PPO-v2', color='forestgreen')
     ax.set_xlabel('Episode')
     ax.set_ylabel('TPOT')
     ax.set_title('Training TPOT (lower is better)')
     ax.legend()
     ax.grid(True, alpha=0.3)
 
-    # Eval TPOT comparison
+    # Col 2: v1 eval TPOT
     ax = axes[0, 2]
     if metrics_v1.eval_tpot:
         x = np.arange(len(metrics_v1.eval_tpot))
-        ax.plot(x, metrics_v1.eval_tpot, 'o-', label='PPO-v1', markersize=3)
-        ax.plot(x, metrics_v1.dp_tpot, 's--', label='DP', markersize=3)
-        ax.plot(x, metrics_v1.greedy_tpot, '^--', label='Greedy', markersize=3)
-    ax.set_xlabel('Evaluation Step')
+        ax.plot(x, metrics_v1.eval_tpot, 'o-', label='PPO-v1', markersize=3, color='steelblue')
+        ax.plot(x, metrics_v1.dp_tpot, 's--', label='DP', markersize=3, color='gold')
+        ax.plot(x, metrics_v1.greedy_tpot, '^--', label='Greedy', markersize=3, color='coral')
+    ax.set_xlabel('Eval Step')
     ax.set_ylabel('Avg TPOT')
-    ax.set_title('PPO-v1: Eval TPOT Comparison')
-    ax.legend()
+    ax.set_title('PPO-v1: Eval TPOT')
+    ax.legend(fontsize=7)
     ax.grid(True, alpha=0.3)
 
-    # Policy loss
+    # Row 1: Policy/Value losses
+    # Col 0: Policy loss
     ax = axes[1, 0]
     if metrics_v1.policy_losses:
-        ax.plot(smooth(metrics_v1.policy_losses, 20), alpha=0.8, label='PPO-v1')
+        ax.plot(smooth(metrics_v1.policy_losses, 20), alpha=0.8, label='PPO-v1', color='steelblue')
     if metrics_v2.policy_losses:
-        ax.plot(smooth(metrics_v2.policy_losses, 20), alpha=0.8, label='PPO-v2')
+        ax.plot(smooth(metrics_v2.policy_losses, 20), alpha=0.8, label='PPO-v2', color='forestgreen')
     ax.set_xlabel('Update')
     ax.set_ylabel('Policy Loss')
     ax.set_title('Policy Loss')
     ax.legend()
     ax.grid(True, alpha=0.3)
 
-    # Value loss
+    # Col 1: Value loss
     ax = axes[1, 1]
     if metrics_v1.value_losses:
-        ax.plot(smooth(metrics_v1.value_losses, 20), alpha=0.8, label='PPO-v1')
+        ax.plot(smooth(metrics_v1.value_losses, 20), alpha=0.8, label='PPO-v1', color='steelblue')
     if metrics_v2.value_losses:
-        ax.plot(smooth(metrics_v2.value_losses, 20), alpha=0.8, label='PPO-v2')
+        ax.plot(smooth(metrics_v2.value_losses, 20), alpha=0.8, label='PPO-v2', color='forestgreen')
     ax.set_xlabel('Update')
     ax.set_ylabel('Value Loss')
     ax.set_title('Value Loss')
     ax.legend()
     ax.grid(True, alpha=0.3)
 
-    # Entropy
+    # Col 2: v2 eval TPOT
     ax = axes[1, 2]
+    if metrics_v2.eval_tpot:
+        x = np.arange(len(metrics_v2.eval_tpot))
+        ax.plot(x, metrics_v2.eval_tpot, 's-', label='PPO-v2', markersize=3, color='forestgreen')
+        ax.plot(x, metrics_v2.dp_tpot, '^--', label='DP', markersize=3, color='gold')
+        ax.plot(x, metrics_v2.greedy_tpot, 'D--', label='Greedy', markersize=3, color='coral')
+    ax.set_xlabel('Eval Step')
+    ax.set_ylabel('Avg TPOT')
+    ax.set_title('PPO-v2: Eval TPOT')
+    ax.legend(fontsize=7)
+    ax.grid(True, alpha=0.3)
+
+    # Row 2: Eval comparison and entropy
+    # Col 0: Combined v1 eval gap to DP
+    ax = axes[2, 0]
+    if metrics_v1.eval_tpot:
+        x = np.arange(len(metrics_v1.eval_tpot))
+        gap_v1 = [(v - d) / (d + 1e-8) * 100 for v, d in zip(metrics_v1.eval_tpot, metrics_v1.dp_tpot)]
+        ax.plot(x, gap_v1, 'o-', label='PPO-v1', markersize=3, color='steelblue')
+    if metrics_v2.eval_tpot:
+        x = np.arange(len(metrics_v2.eval_tpot))
+        gap_v2 = [(v - d) / (d + 1e-8) * 100 for v, d in zip(metrics_v2.eval_tpot, metrics_v2.dp_tpot)]
+        ax.plot(x, gap_v2, 's-', label='PPO-v2', markersize=3, color='forestgreen')
+    ax.axhline(y=0, color='gold', linewidth=1.5, linestyle='--', label='DP baseline')
+    ax.set_xlabel('Eval Step')
+    ax.set_ylabel('Gap to DP (%)')
+    ax.set_title('Gap to DP (negative = better than DP)')
+    ax.legend(fontsize=7)
+    ax.grid(True, alpha=0.3)
+
+    # Col 1: Entropy
+    ax = axes[2, 1]
     if metrics_v1.entropies:
-        ax.plot(smooth(metrics_v1.entropies, 20), alpha=0.8, label='PPO-v1')
+        ax.plot(smooth(metrics_v1.entropies, 20), alpha=0.8, label='PPO-v1', color='steelblue')
     if metrics_v2.entropies:
-        ax.plot(smooth(metrics_v2.entropies, 20), alpha=0.8, label='PPO-v2')
+        ax.plot(smooth(metrics_v2.entropies, 20), alpha=0.8, label='PPO-v2', color='forestgreen')
     ax.set_xlabel('Update')
     ax.set_ylabel('Entropy')
     ax.set_title('Policy Entropy')
     ax.legend()
     ax.grid(True, alpha=0.3)
 
+    # Col 2: v1+v2 combined eval
+    ax = axes[2, 2]
+    if metrics_v1.eval_tpot and metrics_v2.eval_tpot:
+        x1 = np.arange(len(metrics_v1.eval_tpot))
+        x2 = np.arange(len(metrics_v2.eval_tpot))
+        ax.plot(x1, metrics_v1.eval_tpot, 'o-', label='PPO-v1', markersize=3, color='steelblue')
+        ax.plot(x2, metrics_v2.eval_tpot, 's-', label='PPO-v2', markersize=3, color='forestgreen')
+        ax.plot(x1, metrics_v1.dp_tpot, '^--', label='DP', markersize=3, color='gold')
+    ax.set_xlabel('Eval Step')
+    ax.set_ylabel('Avg TPOT')
+    ax.set_title('PPO-v1 vs PPO-v2 vs DP')
+    ax.legend(fontsize=7)
+    ax.grid(True, alpha=0.3)
+
+    plt.suptitle('Training Curves: PPO-v1 (steelblue) vs PPO-v2 (forestgreen)', fontsize=14, fontweight='bold')
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, 'training_curves.png'), dpi=150)
     plt.close()
     print(f"Saved: {os.path.join(output_dir, 'training_curves.png')}")
-
 
 def plot_tpot_comparison(results: List[TestResult], output_dir: str):
     """Bar chart comparing TPOT across algorithms for each test."""

@@ -403,11 +403,11 @@ def plot_pipeline_parallel(
     output_dir: str = "results",
     num_microbatches: int = 4,
 ):
-    """Visualize pipeline parallel execution across all devices (including unused).
+    """Visualize pipeline parallel execution across ALL devices (including unused).
 
-    - All device rows are shown (not just active stages)
-    - Compute blocks for each micro-batch
-    - Transfer blocks between devices (network latency)
+    - All device rows are shown, idle devices are clearly marked
+    - Compute blocks per micro-batch
+    - Transfer blocks between stages (network latency)
     - Corner labels for each device row
     """
     partitions = {
@@ -418,42 +418,38 @@ def plot_pipeline_parallel(
     }
 
     nd = result.num_devices
-    max_time = 0.0
 
+    # Pre-compute max time across all algorithms
+    max_time = 0.0
     for name, partition in partitions.items():
         pipeline_info = compute_pipeline_tpot(partition, devs, lys, tensor_size, num_microbatches)
-        # Compute total pipeline time for this algorithm
         startup = sum(pipeline_info['stage_times']) + pipeline_info['transfer_overhead'] * len(pipeline_info['stage_times'])
         total = startup + (num_microbatches - 1) * (pipeline_info['max_stage_time'] + pipeline_info['transfer_overhead'])
         max_time = max(max_time, total)
+    max_time *= 1.05
 
-    max_time *= 1.05  # small margin
-
-    # Build per-device stage info
-    def get_device_stages(partition):
+    # Helpers
+    def get_stages(partition):
         stages = []
-        current_dev = partition[0]
-        current_layers = [0]
+        cur_dev = partition[0]
+        cur_layers = [0]
         for i in range(1, len(partition)):
-            if partition[i] == current_dev:
-                current_layers.append(i)
+            if partition[i] == cur_dev:
+                cur_layers.append(i)
             else:
-                stages.append((current_dev, current_layers[:]))
-                current_dev = partition[i]
-                current_layers = [i]
-        stages.append((current_dev, current_layers[:]))
+                stages.append((cur_dev, cur_layers[:]))
+                cur_dev = partition[i]
+                cur_layers = [i]
+        stages.append((cur_dev, cur_layers[:]))
         return stages
 
-    # Compute per-stage timing details
     def get_stage_details(partition, stages):
         details = []
         stage_devs = [s[0] for s in stages]
-        cum_transfer = 0.0
         prev_time = 0.0
         for si, (dev_id, layer_indices) in enumerate(stages):
             total_cost = sum(lys.compute_costs[l] for l in layer_indices)
             stage_time = total_cost / devs.compute_power[dev_id]
-            # transfer from previous stage
             transfer_in = 0.0
             if si > 0:
                 from_dev = stage_devs[si - 1]
@@ -471,90 +467,97 @@ def plot_pipeline_parallel(
 
     fig, all_axes = plt.subplots(len(partitions), 1, figsize=(22, 5.5 * len(partitions)))
 
-    # Color palette for compute blocks (per stage index, not device)
-    num_possible_stages = nd  # max stages = num devices
-    stage_colors = plt.cm.tab10(np.linspace(0, 1, num_possible_stages))
+    stage_colors = plt.cm.tab10(np.linspace(0, 1, nd))
     transfer_color = '#888888'
     idle_color = '#f0f0f0'
 
     for row, (name, partition) in enumerate(partitions.items()):
         ax = all_axes[row] if len(partitions) > 1 else all_axes
 
-        stages = get_device_stages(partition)
+        stages = get_stages(partition)
         stage_details = get_stage_details(partition, stages)
-        stage_devs = [s['dev_id'] for s in stage_details]
         pipeline_info = compute_pipeline_tpot(partition, devs, lys, tensor_size, num_microbatches)
-        num_stages = len(stages)
+        used_devs = set(d['dev_id'] for d in stage_details)
+        num_idle = nd - len(used_devs)
 
-        # Map stage_idx -> visual color
+        # Draw idle background for ALL devices
         for dev_id in range(nd):
-            ax.barh(dev_id, max_time, left=0, color=idle_color, edgecolor='#cccccc', linewidth=0.5)
+            ax.barh(dev_id, max_time, left=0, color=idle_color,
+                   edgecolor='#cccccc', linewidth=0.5)
 
-        # Draw compute blocks per device
+        # Draw compute + transfer blocks per active device
+        used_colors = {}
         for si, detail in enumerate(stage_details):
             dev_id = detail['dev_id']
             stage_time = detail['stage_time']
             stage_start = detail['start_time']
             transfer_in = detail['transfer_in']
-            stage_color = stage_colors[si % len(stage_colors)]
+            color = stage_colors[si % len(stage_colors)]
+            used_colors[si] = color
 
-            # Transfer block (shown on same row as the receiving device)
+            # Transfer block
             if si > 0 and transfer_in > 0:
-                transfer_start = stage_start - transfer_in
-                ax.barh(dev_id, transfer_in, left=transfer_start,
+                t_start = stage_start - transfer_in
+                ax.barh(dev_id, transfer_in, left=t_start,
                        color=transfer_color, edgecolor='black', linewidth=0.5,
-                       alpha=0.6, hatch='///', label='Transfer' if si == 1 else '')
-                ax.text(transfer_start + transfer_in / 2, dev_id,
-                       f'T{si}', ha='center', va='center', fontsize=6, color='white', fontweight='bold')
+                       alpha=0.6, hatch='///')
+                ax.text(t_start + transfer_in / 2, dev_id,
+                       f'T{si}', ha='center', va='center', fontsize=6,
+                       color='white', fontweight='bold')
 
             # Compute blocks per micro-batch
             for mb in range(num_microbatches):
                 mb_offset = mb * (pipeline_info['max_stage_time'] + pipeline_info['transfer_overhead'])
                 start = stage_start + mb_offset
                 ax.barh(dev_id, stage_time, left=start,
-                       color=stage_color, edgecolor='black', linewidth=0.5, alpha=0.85)
+                       color=color, edgecolor='black', linewidth=0.5, alpha=0.85)
                 ax.text(start + stage_time / 2, dev_id,
                        f'MB{mb}', ha='center', va='center', fontsize=6, fontweight='bold')
 
-        # Corner labels: top-left label for each device row
+        # Corner labels (left of each row)
         for dev_id in range(nd):
             ax.text(-0.003 * max_time, dev_id, f'Dev {dev_id}',
                    ha='right', va='center', fontsize=9, fontweight='bold',
-                   color='#333333', transform=ax.get_yaxis_transform(),
-                   clip_on=False)
+                   color='#333333', transform=ax.get_yaxis_transform(), clip_on=False)
 
-        # Add legend
-        used_stages_legend = {}
-        for si, detail in enumerate(stage_details):
-            dev_id = detail['dev_id']
-            if si not in used_stages_legend:
-                used_stages_legend[si] = stage_colors[si % len(stage_colors)]
-
+        # Legend
         handles = []
-        for si, color in used_stages_legend.items():
-            dev_id = stage_devs[si]
-            n_layers = len(stage_details[si]['layer_indices'])
-            patch = mpatches.Patch(color=color, label=f'Stage {si} (Dev {dev_id}, {n_layers}L)')
+        for si, color in used_colors.items():
+            d = stage_details[si]
+            patch = mpatches.Patch(
+                color=color,
+                label=f'Stage {si} (Dev {d["dev_id"]}, {len(d["layer_indices"])}L)'
+            )
             handles.append(patch)
-        transfer_patch = mpatches.Patch(color=transfer_color, alpha=0.6, hatch='///',
-                                        label='Transfer (network latency)')
-        handles.append(transfer_patch)
+        handles.append(mpatches.Patch(
+            color=transfer_color, alpha=0.6, hatch='///',
+            label='Transfer (network latency)'
+        ))
+        if num_idle > 0:
+            handles.append(mpatches.Patch(
+                facecolor=idle_color, edgecolor='#cccccc', linewidth=1,
+                label=f'Idle ({num_idle} device{"s" if num_idle > 1 else ""})'
+            ))
 
         ax.set_yticks(range(nd))
         ax.set_yticklabels([f'Dev {i}' for i in range(nd)], fontsize=9)
         ax.set_xlim(-0.12 * max_time, max_time * 1.02)
         ax.set_xlabel('Time (arbitrary units)', fontsize=10)
-        ax.set_title(f'{name}: TPOT={pipeline_info["tpot"]:.4f} | '
-                    f'Bubble={pipeline_info["bubble_fraction"]*100:.1f}% | '
-                    f'{num_stages} stage(s) used, {nd - len(set(stage_devs))} device(s) idle',
-                    fontsize=11, fontweight='bold')
+        ax.set_title(
+            f'{name}: TPOT={pipeline_info["tpot"]:.4f} | '
+            f'Bubble={pipeline_info["bubble_fraction"]*100:.1f}% | '
+            f'{len(stages)} stage(s), {num_idle} idle',
+            fontsize=11, fontweight='bold'
+        )
         ax.legend(handles=handles, loc='upper right', fontsize=7, ncol=2)
         ax.grid(True, alpha=0.3, axis='x')
         ax.set_ylabel('Device', fontsize=10)
 
-    plt.suptitle(f'Pipeline Parallel Visualization - Test #{result.test_id} '
-                f'({result.num_layers}L × {result.num_devices}D, {num_microbatches} microbatches)',
-                fontsize=14, fontweight='bold')
+    plt.suptitle(
+        f'Pipeline Parallel Visualization - Test #{result.test_id} '
+        f'({result.num_layers}L x {result.num_devices}D, {num_microbatches} microbatches)',
+        fontsize=14, fontweight='bold'
+    )
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, f'pipeline_parallel_test{result.test_id}.png'), dpi=150)
     plt.close()

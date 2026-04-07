@@ -408,7 +408,6 @@ def plot_pipeline_parallel(
     - All device rows are shown, idle devices are clearly marked
     - Compute blocks per micro-batch
     - Transfer blocks between stages (network latency)
-    - Corner labels for each device row
     """
     partitions = {
         'DP': result.dp_partition,
@@ -505,20 +504,14 @@ def plot_pipeline_parallel(
                        f'T{si}', ha='center', va='center', fontsize=6,
                        color='white', fontweight='bold')
 
-            # Compute blocks per micro-batch
+            # Compute blocks per micro-batch — each MB starts right after previous finishes on this device
             for mb in range(num_microbatches):
-                mb_offset = mb * (pipeline_info['max_stage_time'] + pipeline_info['transfer_overhead'])
+                mb_offset = mb * stage_time
                 start = stage_start + mb_offset
                 ax.barh(dev_id, stage_time, left=start,
                        color=color, edgecolor='black', linewidth=0.5, alpha=0.85)
                 ax.text(start + stage_time / 2, dev_id,
                        f'MB{mb}', ha='center', va='center', fontsize=6, fontweight='bold')
-
-        # Corner labels (left of each row)
-        for dev_id in range(nd):
-            ax.text(-0.003 * max_time, dev_id, f'Dev {dev_id}',
-                   ha='right', va='center', fontsize=9, fontweight='bold',
-                   color='#333333', transform=ax.get_yaxis_transform(), clip_on=False)
 
         # Legend
         handles = []
@@ -541,7 +534,7 @@ def plot_pipeline_parallel(
 
         ax.set_yticks(range(nd))
         ax.set_yticklabels([f'Dev {i}' for i in range(nd)], fontsize=9)
-        ax.set_xlim(-0.12 * max_time, max_time * 1.02)
+        ax.set_xlim(-0.04 * max_time, max_time * 1.02)
         ax.set_xlabel('Time (arbitrary units)', fontsize=10)
         ax.set_title(
             f'{name}: TPOT={pipeline_info["tpot"]:.4f} | '

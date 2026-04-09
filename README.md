@@ -109,6 +109,32 @@ Key parameters in `config.py`:
 | `max_training_minutes` | 15.0 | Time budget per version |
 | `num_episodes` | 10000 | Training episodes per version |
 
+### Version Toggles
+
+Control which versions to train/evaluate via `config.py`:
+
+**TrainConfig** (training):
+```python
+train_v1: bool = True    # DQN
+train_v2: bool = True    # PPO-Binary
+train_v3: bool = True    # PPO-Order
+train_v4: bool = True    # PPO-AutoReg
+train_v5: bool = True    # Maskable PPO
+train_v6: bool = True    # GNN-PPO
+train_v7: bool = True    # GNN-AR-PPO
+```
+
+**EvalConfig** (evaluation, defaults to V6+V7 only):
+```python
+eval_v1: bool = False
+eval_v2: bool = False
+eval_v3: bool = False
+eval_v4: bool = False
+eval_v5: bool = False
+eval_v6: bool = True
+eval_v7: bool = True
+```
+
 ## Evaluation Metrics
 
 - **Gap to DP (%)**: `(method_tpot - dp_tpot) / dp_tpot * 100` — lower is better
@@ -116,6 +142,40 @@ Key parameters in `config.py`:
 - **Win Rate**: Percentage of test cases where method TPOT ≤ baseline × 1.02
 
 Test grid: layers × devices = [16, 32, 48, 64] × [3, 5, 7, 10] with 3 seeds each.
+
+## Results
+
+### Training Curves
+![Training Curves](results/training_curves.png)
+
+### TPOT Comparison
+![TPOT Comparison](results/tpot_comparison.png)
+
+### Optimality Verification
+![Optimality Verification](results/optimality_verification.png)
+
+### Summary Stats
+![Summary Stats](results/summary_stats.png)
+
+### Scaling Analysis
+![Scaling Analysis](results/scaling_analysis.png)
+
+### Scaling Sweep
+![Scaling Sweep](results/scaling_sweep.png)
+
+### Pipeline Bubble Visualization
+![Pipeline Bubble](results/pipeline_bubble.png)
+
+## Known Issues
+
+**Single-device collapse problem**: When TPOT is modeled as `sum(stage_compute) + sum(transfer)`, the optimal solution always puts all layers on the single fastest device. This is because:
+1. By convexity, `total_cost / max_power` is always ≤ any multi-device split
+2. Additional devices only add positive transfer overhead
+3. The DP's auto-k selection always picks `k=1`, making device ordering irrelevant
+
+As a result, all methods (DP, Beam Search, Brute Force, V6, V7) converge to the same 0% gap — there is no room for RL to demonstrate improvement.
+
+**Planned fix**: Introduce device memory constraints (`memory_limit`) so that no single device can hold all layers, forcing multi-device placement and making the ordering problem meaningful. This will be addressed in the next few days.
 
 ## Requirements
 

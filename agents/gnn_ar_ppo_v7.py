@@ -15,7 +15,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from agents.shared import MAX_DEVICES, MAX_LAYERS
-from baselines import min_max_bottleneck_dp
+from baselines import min_sum_tpot_dp
 from environment import compute_simple_tpot
 
 STOP_ACTION = MAX_DEVICES  # action index for STOP
@@ -129,9 +129,9 @@ def update_dynamic_features(node_feats, devices, selected, num_devices):
 class ECGCLayer(nn.Module):
     """Edge-Conditioned Graph Convolution Layer.
 
-    Uses Mean + Max dual aggregation to capture both average and bottleneck signals.
-    TPOT is a min-max bottleneck problem: max(device compute) + sum(transfers).
-    Mean alone dilutes extreme values; Max captures the worst-case bottleneck.
+    Uses Mean + Max dual aggregation to capture both average and extreme signals.
+    Max aggregation captures outlier devices (very fast/slow) that strongly
+    influence the optimal partitioning decision.
     """
 
     def __init__(self, hidden_dim=128, edge_dim=64):
@@ -163,7 +163,7 @@ class ECGCLayer(nn.Module):
         neighbor_count = mask.sum(dim=2).clamp(min=1.0)
         agg_mean = messages.sum(dim=2) / neighbor_count
 
-        # Max aggregation (captures bottleneck / worst-case)
+        # Max aggregation (captures extreme / outlier devices)
         messages_for_max = messages.masked_fill(~adj_mask.bool().unsqueeze(-1), float('-inf'))
         agg_max = messages_for_max.max(dim=2)[0]
         # Handle isolated nodes (all -inf) → zero
@@ -382,7 +382,7 @@ def ppo_v7_generate_episode(
 
     # Compute partition via DP
     ordering = selected if selected else [0]
-    partition = min_max_bottleneck_dp(num_layers, ordering, devices, layers, tensor_size)
+    partition = min_sum_tpot_dp(num_layers, ordering, devices, layers, tensor_size)
     tpot = compute_simple_tpot(partition, devices, layers, tensor_size)
 
     return step_data, ordering, partition, tpot

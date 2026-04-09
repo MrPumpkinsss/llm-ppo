@@ -1,8 +1,8 @@
-"""V4: PPO-Clip + Autoregressive Ordering + min-max DP.
+"""V4: PPO-Clip + Autoregressive Ordering + sum-based TPOT DP.
 
 GRU-based autoregressive device selection. At each step, the network
 picks the next device from remaining devices. The ordering goes to
-min_max_bottleneck_dp for layer allocation.
+min_sum_tpot_dp for layer allocation.
 """
 import numpy as np
 import torch
@@ -13,7 +13,7 @@ from agents.shared import (
     MAX_DEVICES, MAX_LAYERS, get_seq_obs_dim,
     build_observation, build_sequential_observation,
 )
-from baselines import min_max_bottleneck_dp
+from baselines import min_sum_tpot_dp
 from environment import compute_simple_tpot
 
 
@@ -142,7 +142,7 @@ def ppo_v4_generate_episode(
 
     # Compute final partition and reward
     ordering = selected if selected else [0]
-    partition = min_max_bottleneck_dp(num_layers, ordering, devices, layers, tensor_size)
+    partition = min_sum_tpot_dp(num_layers, ordering, devices, layers, tensor_size)
     tpot = compute_simple_tpot(partition, devices, layers, tensor_size)
 
     return step_data, ordering, partition, tpot

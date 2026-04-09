@@ -1,4 +1,4 @@
-"""V2 Trainer: PPO binary device selection + min-max DP."""
+"""V2 Trainer: PPO binary device selection + sum-based TPOT DP."""
 import time
 import numpy as np
 import torch
@@ -14,7 +14,7 @@ from environment import compute_simple_tpot
 
 
 class PPOv2Trainer(BaseTrainer):
-    """Trainer for V2: PPO binary device selection + min-max DP."""
+    """Trainer for V2: PPO binary device selection + sum-based TPOT DP."""
 
     def __init__(self, config):
         super().__init__(config, "V2-PPO-Binary", max_minutes=config.max_training_minutes)

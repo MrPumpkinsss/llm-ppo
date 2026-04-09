@@ -1,4 +1,4 @@
-"""V7 Trainer: Autoregressive GNN-PPO with Positional Encoding + min-max DP."""
+"""V7 Trainer: Autoregressive GNN-PPO with Positional Encoding + sum-based TPOT DP."""
 import time
 import numpy as np
 import torch
@@ -11,12 +11,12 @@ from agents.gnn_ar_ppo_v7 import (
     build_v7_graph_observation, STOP_ACTION,
 )
 from agents.shared import compute_reward, MAX_DEVICES
-from baselines import min_max_bottleneck_dp
+from baselines import min_sum_tpot_dp
 from environment import compute_simple_tpot
 
 
 class PPOv7Trainer(BaseTrainer):
-    """Trainer for V7: Autoregressive GNN-PPO + positional encoding + min-max DP."""
+    """Trainer for V7: Autoregressive GNN-PPO + positional encoding + sum-based TPOT DP."""
 
     def __init__(self, config):
         super().__init__(config, "V7-GNN-AR-PPO", max_minutes=config.max_training_minutes)
@@ -79,7 +79,7 @@ class PPOv7Trainer(BaseTrainer):
 
             # Relative reward: positive = better than DP-sorted baseline
             ordered_devices = sorted(range(nd), key=lambda d: devices.compute_power[d], reverse=True)
-            dp_part = min_max_bottleneck_dp(nl, ordered_devices, devices, layers, ts)
+            dp_part = min_sum_tpot_dp(nl, ordered_devices, devices, layers, ts)
             dp_tpot = compute_simple_tpot(dp_part, devices, layers, ts)
             reward = (dp_tpot - tpot) / (dp_tpot + 1e-8)
 

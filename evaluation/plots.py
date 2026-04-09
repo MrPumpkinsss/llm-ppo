@@ -38,6 +38,14 @@ METHOD_NAMES = {
     'dp_raw': 'DP-Raw',
     'greedy': 'Greedy',
 }
+ALL_RL_VERSIONS = ['v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7']
+
+
+def _get_versions(eval_config):
+    """Get eval_versions from eval_config, default to all."""
+    if eval_config is not None and hasattr(eval_config, 'eval_versions'):
+        return eval_config.eval_versions
+    return ALL_RL_VERSIONS
 
 
 def generate_all_plots(
@@ -46,42 +54,43 @@ def generate_all_plots(
     metrics_dict: dict,
     output_dir: str,
     config=None,
+    eval_config=None,
 ):
     """Generate all visualization plots."""
     os.makedirs(output_dir, exist_ok=True)
 
     print("  Generating training curves...")
-    plot_training_curves(metrics_dict, output_dir)
+    plot_training_curves(metrics_dict, output_dir, eval_config=eval_config)
 
     print("  Generating TPOT comparison...")
-    plot_tpot_comparison(results, output_dir)
+    plot_tpot_comparison(results, output_dir, eval_config=eval_config)
 
     print("  Generating device allocation heatmaps...")
-    plot_device_allocation(results, output_dir)
+    plot_device_allocation(results, output_dir, eval_config=eval_config)
 
     print("  Generating pipeline bubble visualization...")
-    plot_pipeline_bubble(results, output_dir)
+    plot_pipeline_bubble(results, output_dir, eval_config=eval_config)
 
     print("  Generating scaling analysis...")
-    plot_scaling_analysis(results, output_dir)
+    plot_scaling_analysis(results, output_dir, eval_config=eval_config)
 
     print("  Generating strategy time comparison...")
-    plot_strategy_time(results, output_dir)
+    plot_strategy_time(results, output_dir, eval_config=eval_config)
 
     print("  Generating optimality verification...")
-    plot_optimality_verification(results, output_dir)
+    plot_optimality_verification(results, output_dir, eval_config=eval_config)
 
     print("  Generating summary stats...")
-    plot_summary_stats(results, stats, output_dir)
+    plot_summary_stats(results, stats, output_dir, eval_config=eval_config)
 
     print(f"  All plots saved to {output_dir}/")
 
 
 # ============= 1. Training Curves =============
 
-def plot_training_curves(metrics_dict: dict, output_dir: str):
+def plot_training_curves(metrics_dict: dict, output_dir: str, eval_config=None):
     """Plot training curves for all versions (2x3 grid)."""
-    versions = ['v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7']
+    versions = _get_versions(eval_config)
     fig, axes = plt.subplots(2, 3, figsize=(18, 10))
 
     # Row 1: reward, TPOT, eval gap to DP
@@ -128,24 +137,23 @@ def plot_training_curves(metrics_dict: dict, output_dir: str):
 
 # ============= 2. Pipeline Bubble Visualization =============
 
-def plot_pipeline_bubble(results: list, output_dir: str):
+def plot_pipeline_bubble(results: list, output_dir: str, eval_config=None):
     """Gantt-chart style pipeline bubble visualization for one representative case."""
+    versions = _get_versions(eval_config)
 
     # Pick a representative test case (mid-range)
     mid_idx = len(results) // 2
     r = results[mid_idx]
     devices, layers, ts = create_random_config(r.num_layers, r.num_devices, seed=r.seed)
 
-    methods = {
-        'V1-DQN': r.v1_partition,
-        'V2-PPO': r.v2_partition,
-        'V3-PPO': r.v3_partition,
-        'V4-PPO': r.v4_partition,
-        'V5-MaskPPO': r.v5_partition,
-        'BeamSearch': r.beam_partition,
-        'DP-Sorted': r.dp_partition,
-        'DP-Raw': r.dp_raw_partition,
-    }
+    ver_short = {'v1': 'DQN', 'v2': 'PPO', 'v3': 'PPO-Ord', 'v4': 'PPO-AR',
+                 'v5': 'MaskPPO', 'v6': 'GNN-PPO', 'v7': 'AR-GNN'}
+    methods = {}
+    for v in versions:
+        methods[f'V{v[1]}-{ver_short[v]}'] = getattr(r, f'{v}_partition', [])
+    methods['BeamSearch'] = r.beam_partition
+    methods['DP-Sorted'] = r.dp_partition
+    methods['DP-Raw'] = r.dp_raw_partition
     fig, axes = plt.subplots(len(methods), 1, figsize=(16, 3 * len(methods)))
     if len(methods) == 1:
         axes = [axes]
@@ -209,21 +217,20 @@ def plot_pipeline_bubble(results: list, output_dir: str):
 
 # ============= 3. Device Allocation Heatmap =============
 
-def plot_device_allocation(results: list, output_dir: str):
+def plot_device_allocation(results: list, output_dir: str, eval_config=None):
     """Heatmap showing layer-to-device assignments."""
+    versions = _get_versions(eval_config)
     mid_idx = len(results) // 2
     r = results[mid_idx]
 
-    methods = {
-        'V1-DQN': r.v1_partition,
-        'V2-PPO': r.v2_partition,
-        'V3-PPO': r.v3_partition,
-        'V4-PPO': r.v4_partition,
-        'V5-MaskPPO': r.v5_partition,
-        'Beam': r.beam_partition,
-        'DP-Sorted': r.dp_partition,
-        'DP-Raw': r.dp_raw_partition,
-    }
+    ver_short = {'v1': 'DQN', 'v2': 'PPO', 'v3': 'PPO-Ord', 'v4': 'PPO-AR',
+                 'v5': 'MaskPPO', 'v6': 'GNN-PPO', 'v7': 'AR-GNN'}
+    methods = {}
+    for v in versions:
+        methods[f'V{v[1]}-{ver_short[v]}'] = getattr(r, f'{v}_partition', [])
+    methods['Beam'] = r.beam_partition
+    methods['DP-Sorted'] = r.dp_partition
+    methods['DP-Raw'] = r.dp_raw_partition
 
     # Filter to methods with partitions
     methods = {k: v for k, v in methods.items() if v}
@@ -258,9 +265,10 @@ def plot_device_allocation(results: list, output_dir: str):
 
 # ============= 4. TPOT Comparison Bar Chart =============
 
-def plot_tpot_comparison(results: list, output_dir: str):
+def plot_tpot_comparison(results: list, output_dir: str, eval_config=None):
     """Grouped bar chart comparing TPOT across methods."""
-    methods = ['v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'beam', 'dp', 'dp_raw', 'greedy']
+    versions = _get_versions(eval_config)
+    methods = versions + ['beam', 'dp', 'dp_raw', 'greedy']
     method_labels = [METHOD_NAMES[m] for m in methods]
     colors = [METHOD_COLORS[m] for m in methods]
 
@@ -304,9 +312,10 @@ def plot_tpot_comparison(results: list, output_dir: str):
 
 # ============= 5. Scaling Analysis =============
 
-def plot_scaling_analysis(results: list, output_dir: str):
+def plot_scaling_analysis(results: list, output_dir: str, eval_config=None):
     """Line plots: TPOT vs layers for different device counts."""
-    methods = ['v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'beam', 'dp', 'dp_raw']
+    versions = _get_versions(eval_config)
+    methods = versions + ['beam', 'dp', 'dp_raw']
     layer_values = sorted(set(r.num_layers for r in results))
     device_values = sorted(set(r.num_devices for r in results))
 
@@ -339,7 +348,7 @@ def plot_scaling_analysis(results: list, output_dir: str):
         axes[0, col].grid(True, alpha=0.3)
 
         # Bottom row: inference time vs layers
-        for m in ['v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'beam']:
+        for m in versions + ['beam']:
             times_by_layer = {}
             for r in results:
                 if r.num_devices == nd:
@@ -369,9 +378,10 @@ def plot_scaling_analysis(results: list, output_dir: str):
 
 # ============= 6. Strategy Generation Time =============
 
-def plot_strategy_time(results: list, output_dir: str):
+def plot_strategy_time(results: list, output_dir: str, eval_config=None):
     """Bar chart comparing inference time by method and problem size."""
-    methods = ['v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'beam', 'dp', 'dp_raw']
+    versions = _get_versions(eval_config)
+    methods = versions + ['beam', 'dp', 'dp_raw']
     layer_groups = sorted(set(r.num_layers for r in results))
 
     fig, ax = plt.subplots(figsize=(14, 6))
@@ -405,9 +415,10 @@ def plot_strategy_time(results: list, output_dir: str):
 
 # ============= 7. Optimality Verification =============
 
-def plot_optimality_verification(results: list, output_dir: str):
+def plot_optimality_verification(results: list, output_dir: str, eval_config=None):
     """Scatter plot + histogram showing how close each RL method gets to optimal."""
-    rl_methods = ['v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7']
+    versions = _get_versions(eval_config)
+    rl_methods = versions
 
     # Filter to methods that have valid results
     valid_methods = []
@@ -478,9 +489,10 @@ def plot_optimality_verification(results: list, output_dir: str):
 
 # ============= Summary Stats =============
 
-def plot_summary_stats(results: list, stats: dict, output_dir: str):
+def plot_summary_stats(results: list, stats: dict, output_dir: str, eval_config=None):
     """Win rate bar chart and summary statistics."""
-    rl_methods = ['v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7']
+    versions = _get_versions(eval_config)
+    rl_methods = versions
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
 
     # Win rate vs DP

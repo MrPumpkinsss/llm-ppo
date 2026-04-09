@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from environment import DeviceCluster, LayerModel, create_random_config, compute_simple_tpot
-from baselines import dp_partition, min_max_bottleneck_dp, beam_search_dp
+from baselines import dp_partition, min_sum_tpot_dp, beam_search_dp
 
 
 @dataclass

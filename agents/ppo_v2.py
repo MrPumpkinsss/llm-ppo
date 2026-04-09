@@ -1,7 +1,7 @@
-"""V2: PPO + Binary Device Selection + min-max DP.
+"""V2: PPO + Binary Device Selection + sum-based TPOT DP.
 
 Single-step PPO. One forward pass outputs per-device selection probability.
-Selected devices sorted by compute power -> min_max_bottleneck_dp.
+Selected devices sorted by compute power -> min_sum_tpot_dp.
 """
 import numpy as np
 import torch
@@ -12,7 +12,7 @@ from agents.shared import (
     MAX_DEVICES, MAX_LAYERS, get_obs_dim,
     build_observation,
 )
-from baselines import min_max_bottleneck_dp
+from baselines import min_sum_tpot_dp
 from environment import compute_simple_tpot
 
 
@@ -114,7 +114,7 @@ def selection_to_partition(
     layers,
     tensor_size: float,
 ) -> list:
-    """Convert binary selection to partition via min-max DP.
+    """Convert binary selection to partition via sum-based TPOT DP.
 
     Args:
         selection: (max_devices,) binary array
@@ -130,7 +130,7 @@ def selection_to_partition(
     # Sort selected devices by compute power (descending) for better DP
     selected_devices.sort(key=lambda d: -devices.compute_power[d])
 
-    partition = min_max_bottleneck_dp(
+    partition = min_sum_tpot_dp(
         num_layers, selected_devices, devices, layers, tensor_size
     )
     return partition

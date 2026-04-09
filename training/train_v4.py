@@ -1,4 +1,4 @@
-"""V4 Trainer: PPO-Clip autoregressive ordering + min-max DP."""
+"""V4 Trainer: PPO-Clip autoregressive ordering + sum-based TPOT DP."""
 import time
 import numpy as np
 import torch
@@ -13,12 +13,12 @@ from agents.shared import (
     compute_reward, get_seq_obs_dim, MAX_DEVICES,
     build_sequential_observation, build_observation,
 )
-from baselines import min_max_bottleneck_dp
+from baselines import min_sum_tpot_dp
 from environment import compute_simple_tpot
 
 
 class PPOv4Trainer(BaseTrainer):
-    """Trainer for V4: PPO-Clip autoregressive ordering + min-max DP."""
+    """Trainer for V4: PPO-Clip autoregressive ordering + sum-based TPOT DP."""
 
     def __init__(self, config):
         super().__init__(config, "V4-PPO-AutoReg", max_minutes=config.max_training_minutes)

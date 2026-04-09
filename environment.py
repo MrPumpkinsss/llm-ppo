@@ -52,7 +52,10 @@ def compute_simple_tpot(
     layers: LayerModel,
     tensor_size: float = 1.0,
 ) -> float:
-    """Compute simple TPOT = max(device compute times) + inter-device transfer times.
+    """Compute simple TPOT = sum(device compute times) + inter-device transfer times.
+
+    For single-token autoregressive decode, layers are strictly sequential,
+    so all stage compute times are additive (not parallel).
 
     Args:
         partition: list of device indices for each layer (continuous assignment).
@@ -76,7 +79,7 @@ def compute_simple_tpot(
     if not device_compute:
         return float('inf')
 
-    max_compute = max(device_compute.values())
+    total_compute = sum(device_compute.values())
 
     # Transfer time: every boundary between different devices incurs transfer
     total_transfer = 0.0
@@ -86,7 +89,7 @@ def compute_simple_tpot(
                 partition[i], partition[i + 1], tensor_size
             )
 
-    return max_compute + total_transfer
+    return total_compute + total_transfer
 
 
 def compute_pipeline_tpot(

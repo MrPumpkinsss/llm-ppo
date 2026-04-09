@@ -1,4 +1,4 @@
-"""V5: Maskable PPO-Clip + Sequential Device Selection + min-max DP.
+"""V5: Maskable PPO-Clip + Sequential Device Selection + sum-based TPOT DP.
 
 PPO selects devices one-at-a-time from unused pool, or chooses STOP.
 Not all devices need to be used. Invalid-action masking is handled properly:
@@ -13,7 +13,7 @@ from agents.shared import (
     MAX_DEVICES, MAX_LAYERS, get_seq_obs_dim,
     build_observation, build_sequential_observation,
 )
-from baselines import min_max_bottleneck_dp
+from baselines import min_sum_tpot_dp
 from environment import compute_simple_tpot
 
 STOP_ACTION = MAX_DEVICES  # action index for STOP
@@ -180,7 +180,7 @@ def maskable_v5_generate_episode(
 
     # Compute final partition
     ordering = selected if selected else [0]
-    partition = min_max_bottleneck_dp(num_layers, ordering, devices, layers, tensor_size)
+    partition = min_sum_tpot_dp(num_layers, ordering, devices, layers, tensor_size)
     tpot = compute_simple_tpot(partition, devices, layers, tensor_size)
 
     return step_data, ordering, partition, tpot

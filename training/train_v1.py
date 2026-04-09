@@ -1,4 +1,4 @@
-"""V1 Trainer: DQN + min-max DP."""
+"""V1 Trainer: DQN + sum-based TPOT DP."""
 import time
 import numpy as np
 import torch
@@ -10,12 +10,12 @@ from agents.dqn_v1 import (
     DQNv1Network, ReplayBuffer, dqn_v1_generate_episode, dqn_v1_inference
 )
 from agents.shared import compute_reward, MAX_DEVICES
-from baselines import min_max_bottleneck_dp, dp_partition, beam_search_dp
+from baselines import min_sum_tpot_dp, dp_partition, beam_search_dp
 from environment import compute_simple_tpot, create_random_config
 
 
 class DQNv1Trainer(BaseTrainer):
-    """Trainer for V1: DQN + min-max DP."""
+    """Trainer for V1: DQN + sum-based TPOT DP."""
 
     def __init__(self, config):
         super().__init__(config, "V1-DQN", max_minutes=config.max_training_minutes)

@@ -8,9 +8,9 @@ class EnvConfig:
     """Environment configuration."""
     num_layers: int = 32
     num_devices: int = 5
-    device_compute_range: tuple = (0.1, 5.0) #(0.1, 1.0)
+    device_compute_range: tuple = (0.1, 1.0) #(0.1, 1.0)
     layer_compute_range: tuple = (0.5, 2.0)
-    bandwidth_range: tuple = (0.005, 3.0) # (0.05, 1.0)
+    bandwidth_range: tuple = (0.005, 0.5) # (0.05, 1.0)
     tensor_size: float = 1.0
     enforce_continuous: bool = True
 
@@ -23,7 +23,7 @@ class EnvConfig:
 class TrainConfig:
     """Training configuration for all 5 versions."""
 
-    # V1: DQN + min-max DP
+    # V1: DQN + sum-based TPOT DP
     v1_learning_rate: float = 1e-3
     v1_hidden_dim: int = 256
     v1_batch_size: int = 128
@@ -36,7 +36,7 @@ class TrainConfig:
     v1_num_episodes: int = 10000
     v1_max_grad_norm: float = 1.0
 
-    # V2: PPO binary device selection + min-max DP
+    # V2: PPO binary device selection + sum-based TPOT DP
     v2_learning_rate: float = 5e-4
     v2_hidden_dim: int = 256
     v2_batch_size: int = 256
@@ -48,7 +48,7 @@ class TrainConfig:
     v2_max_grad_norm: float = 0.5
     v2_num_episodes: int = 10000
 
-    # V3: PPO-Clip one-shot ordering + min-max DP
+    # V3: PPO-Clip one-shot ordering + sum-based TPOT DP
     v3_learning_rate: float = 5e-4
     v3_hidden_dim: int = 256
     v3_batch_size: int = 256
@@ -60,7 +60,7 @@ class TrainConfig:
     v3_max_grad_norm: float = 0.5
     v3_num_episodes: int = 10000
 
-    # V4: PPO-Clip autoregressive ordering + min-max DP
+    # V4: PPO-Clip autoregressive ordering + sum-based TPOT DP
     v4_learning_rate: float = 5e-4
     v4_hidden_dim: int = 256
     v4_batch_size: int = 128
@@ -73,7 +73,7 @@ class TrainConfig:
     v4_max_grad_norm: float = 0.5
     v4_num_episodes: int = 10000
 
-    # V5: Maskable PPO-Clip + min-max DP
+    # V5: Maskable PPO-Clip + sum-based TPOT DP
     v5_learning_rate: float = 5e-4
     v5_hidden_dim: int = 256
     v5_batch_size: int = 128
@@ -86,7 +86,7 @@ class TrainConfig:
     v5_max_grad_norm: float = 0.5
     v5_num_episodes: int = 10000
 
-    # V6: GNN-Based PPO + min-max DP
+    # V6: GNN-Based PPO + sum-based TPOT DP
     v6_learning_rate: float = 5e-4
     v6_hidden_dim: int = 256
     v6_num_gnn_layers: int = 3
@@ -99,7 +99,7 @@ class TrainConfig:
     v6_max_grad_norm: float = 0.5
     v6_num_episodes: int = 10000
 
-    # V7: Autoregressive GNN-PPO + Positional Encoding + min-max DP
+    # V7: Autoregressive GNN-PPO + Positional Encoding + sum-based TPOT DP
     v7_learning_rate: float = 5e-4
     v7_hidden_dim: int = 256
     v7_num_gnn_layers: int = 3
@@ -114,7 +114,7 @@ class TrainConfig:
     v7_num_episodes: int = 10000
 
     # Beam Search
-    beam_width: int = 20
+    beam_width: int = 2
 
     # General
     seed: int = 42
@@ -122,13 +122,13 @@ class TrainConfig:
     num_eval_configs: int = 50
     max_training_minutes: float = 15.0    # per version
     device: str = "cpu"
-    train_v1: bool = False
-    train_v2: bool = False
+    train_v1: bool = True
+    train_v2: bool = True
     train_v3: bool = True
-    train_v4: bool = False
-    train_v5: bool = False
-    train_v6: bool = False
-    train_v7: bool = False
+    train_v4: bool = True
+    train_v5: bool = True
+    train_v6: bool = True
+    train_v7: bool = True
     # Resume training
     resume_from_checkpoint: bool = False  # Continue from saved checkpoint
     checkpoint_dir: str = "results"       # Directory with saved models/metrics
@@ -141,5 +141,16 @@ class EvalConfig:
     num_layers_to_test: list = field(default_factory=lambda: [16, 32, 48, 64])
     num_devices_to_test: list = field(default_factory=lambda: [3, 5, 7, 10])
     output_dir: str = "results"
-    beam_width_eval: int = 5             # beam width for evaluation
-    num_inference_candidates: int = 10   # best-of-N for RL models
+    beam_width_eval: int = 2           # beam width for evaluation
+    num_inference_candidates: int = 4   # best-of-N for RL models
+    eval_v1: bool = False
+    eval_v2: bool = False
+    eval_v3: bool = False
+    eval_v4: bool = False
+    eval_v5: bool = False
+    eval_v6: bool = True
+    eval_v7: bool = True
+
+    @property
+    def eval_versions(self) -> list:
+        return [f'v{i}' for i in range(1, 8) if getattr(self, f'eval_v{i}')]

@@ -23,7 +23,7 @@ def train_all(config: TrainConfig):
 
     if config.train_v1:
         print("\n" + "=" * 60)
-        print("Training V1: DQN + min-max DP")
+        print("Training V1: DQN + sum-based TPOT DP")
         print("=" * 60)
         trainer = DQNv1Trainer(config)
         net, metrics = trainer.train()
@@ -31,7 +31,7 @@ def train_all(config: TrainConfig):
 
     if config.train_v2:
         print("\n" + "=" * 60)
-        print("Training V2: PPO Binary + min-max DP")
+        print("Training V2: PPO Binary + sum-based TPOT DP")
         print("=" * 60)
         trainer = PPOv2Trainer(config)
         net, metrics = trainer.train()
@@ -39,7 +39,7 @@ def train_all(config: TrainConfig):
 
     if config.train_v3:
         print("\n" + "=" * 60)
-        print("Training V3: PPO-Clip One-Shot + min-max DP")
+        print("Training V3: PPO-Clip One-Shot + sum-based TPOT DP")
         print("=" * 60)
         trainer = PPOv3Trainer(config)
         net, metrics = trainer.train()
@@ -47,7 +47,7 @@ def train_all(config: TrainConfig):
 
     if config.train_v4:
         print("\n" + "=" * 60)
-        print("Training V4: PPO-Clip AutoReg + min-max DP")
+        print("Training V4: PPO-Clip AutoReg + sum-based TPOT DP")
         print("=" * 60)
         trainer = PPOv4Trainer(config)
         net, metrics = trainer.train()
@@ -55,7 +55,7 @@ def train_all(config: TrainConfig):
 
     if config.train_v5:
         print("\n" + "=" * 60)
-        print("Training V5: Maskable PPO-Clip + min-max DP")
+        print("Training V5: Maskable PPO-Clip + sum-based TPOT DP")
         print("=" * 60)
         trainer = MaskablePPOv5Trainer(config)
         net, metrics = trainer.train()
@@ -63,7 +63,7 @@ def train_all(config: TrainConfig):
 
     if config.train_v6:
         print("\n" + "=" * 60)
-        print("Training V6: GNN-Based PPO + min-max DP")
+        print("Training V6: GNN-Based PPO + sum-based TPOT DP")
         print("=" * 60)
         trainer = PPOv6Trainer(config)
         net, metrics = trainer.train()

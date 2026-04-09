@@ -50,6 +50,13 @@ def main():
         config.train_v5 = '5' in versions
         config.train_v6 = '6' in versions
         config.train_v7 = '7' in versions
+        eval_config.eval_v1 = '1' in versions
+        eval_config.eval_v2 = '2' in versions
+        eval_config.eval_v3 = '3' in versions
+        eval_config.eval_v4 = '4' in versions
+        eval_config.eval_v5 = '5' in versions
+        eval_config.eval_v6 = '6' in versions
+        eval_config.eval_v7 = '7' in versions
 
     if args.quick:
         config.v1_num_episodes = 500
@@ -131,10 +138,13 @@ def main():
 
         torch_device = torch.device(device)
 
-        for ver, NetClass in [('v1', DQNv1Network), ('v2', PPOv2Network),
-                               ('v3', PPOv3Network), ('v4', PPOv4Network),
-                               ('v5', MaskablePPOv5Network), ('v6', PPOv6Network),
-                               ('v7', PPOv7Network)]:
+        all_ver_classes = [('v1', DQNv1Network), ('v2', PPOv2Network),
+                           ('v3', PPOv3Network), ('v4', PPOv4Network),
+                           ('v5', MaskablePPOv5Network), ('v6', PPOv6Network),
+                           ('v7', PPOv7Network)]
+        for ver, NetClass in all_ver_classes:
+            if ver not in eval_config.eval_versions:
+                continue
             model_path = os.path.join(args.output_dir, f'{ver}_model.pt')
             if os.path.exists(model_path):
                 net = NetClass().to(torch_device)
@@ -146,7 +156,7 @@ def main():
 
         # Load metrics
         metrics_dict = {}
-        for ver in ['v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7']:
+        for ver in eval_config.eval_versions:
             mfile = os.path.join(args.output_dir, f'{ver}_metrics.json')
             if os.path.exists(mfile):
                 with open(mfile) as f:
@@ -183,10 +193,11 @@ def main():
     print(f"Total test cases: {stats.get('total_tests', 0)}")
     print()
 
-    for ver in ['v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7']:
-        name = {'v1': 'V1-DQN', 'v2': 'V2-PPO-Binary', 'v3': 'V3-PPO-Order',
-                'v4': 'V4-PPO-AutoReg', 'v5': 'V5-MaskPPO', 'v6': 'V6-GNN-PPO',
-                'v7': 'V7-GNN-AR-PPO'}[ver]
+    ver_names = {'v1': 'V1-DQN', 'v2': 'V2-PPO-Binary', 'v3': 'V3-PPO-Order',
+                 'v4': 'V4-PPO-AutoReg', 'v5': 'V5-MaskPPO', 'v6': 'V6-GNN-PPO',
+                 'v7': 'V7-GNN-AR-PPO'}
+    for ver in eval_config.eval_versions:
+        name = ver_names.get(ver, ver)
         wr_dp = stats.get(f'{ver}_win_rate_dp', 0)
         wr_beam = stats.get(f'{ver}_win_rate_beam', 0)
         gap = stats.get(f'{ver}_avg_gap_to_beam', float('inf'))
@@ -218,19 +229,20 @@ def main():
         json.dump(stats_save, f, indent=2, default=str)
 
     # Generate plots
-    generate_all_plots(results, stats, metrics_dict, args.output_dir, config)
+    generate_all_plots(results, stats, metrics_dict, args.output_dir, config, eval_config)
 
     # Final verdict
     print(f"\n{'='*60}")
     print("FINAL VERDICT")
     print(f"{'='*60}")
     any_pass = False
-    for ver in ['v1', 'v2', 'v3', 'v4', 'v5', 'v6']:
+    for ver in eval_config.eval_versions:
         wr = stats.get(f'{ver}_win_rate_beam', 0)
         passed = wr >= 50
         any_pass = any_pass or passed
         name = {'v1': 'V1-DQN', 'v2': 'V2-PPO-Binary', 'v3': 'V3-PPO-Order',
-                'v4': 'V4-PPO-AutoReg', 'v5': 'V5-MaskPPO', 'v6': 'V6-GNN-PPO'}[ver]
+                'v4': 'V4-PPO-AutoReg', 'v5': 'V5-MaskPPO', 'v6': 'V6-GNN-PPO',
+                'v7': 'V7-GNN-AR-PPO'}.get(ver, ver)
         print(f"  {name}: {'PASS' if passed else 'NEED IMPROVEMENT'} "
               f"(win vs Beam={wr:.0f}%, target≥50%)")
 

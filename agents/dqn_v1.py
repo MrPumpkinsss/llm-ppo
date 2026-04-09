@@ -1,7 +1,7 @@
-"""V1: DQN + min-max bottleneck DP.
+"""V1: DQN + sum-based TPOT DP.
 
 DQN selects devices autoregressively (one at a time or STOP),
-forming an ordered list. The ordered list goes to min_max_bottleneck_dp
+forming an ordered list. The ordered list goes to min_sum_tpot_dp
 for optimal continuous layer allocation.
 """
 import numpy as np
@@ -14,7 +14,7 @@ from agents.shared import (
     MAX_DEVICES, MAX_LAYERS, get_seq_obs_dim,
     build_observation, build_sequential_observation,
 )
-from baselines import min_max_bottleneck_dp
+from baselines import min_sum_tpot_dp
 from environment import compute_simple_tpot
 
 
@@ -165,7 +165,7 @@ def dqn_v1_generate_episode(
                 valid = [d for d in range(num_devices) if d not in selected]
                 selected.append(valid[0])
             ordering = selected
-            partition = min_max_bottleneck_dp(
+            partition = min_sum_tpot_dp(
                 num_layers, ordering, devices, layers, tensor_size
             )
             tpot = compute_simple_tpot(partition, devices, layers, tensor_size)
@@ -189,7 +189,7 @@ def dqn_v1_generate_episode(
     if not selected:
         selected = [0]
     ordering = selected
-    partition = min_max_bottleneck_dp(num_layers, ordering, devices, layers, tensor_size)
+    partition = min_sum_tpot_dp(num_layers, ordering, devices, layers, tensor_size)
     tpot = compute_simple_tpot(partition, devices, layers, tensor_size)
     return transitions, ordering, partition, tpot
 

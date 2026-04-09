@@ -1,4 +1,4 @@
-"""V6 Trainer: GNN-Based PPO + Edge-Conditioned Graph Conv + min-max DP."""
+"""V6 Trainer: GNN-Based PPO + Edge-Conditioned Graph Conv + sum-based TPOT DP."""
 import time
 import numpy as np
 import torch
@@ -11,12 +11,12 @@ from agents.gnn_ppo_v6 import (
     build_graph_observation,
 )
 from agents.shared import compute_reward, MAX_DEVICES
-from baselines import min_max_bottleneck_dp
+from baselines import min_sum_tpot_dp
 from environment import compute_simple_tpot
 
 
 class PPOv6Trainer(BaseTrainer):
-    """Trainer for V6: GNN-Based PPO + min-max DP."""
+    """Trainer for V6: GNN-Based PPO + sum-based TPOT DP."""
 
     def __init__(self, config):
         super().__init__(config, "V6-GNN-PPO", max_minutes=config.max_training_minutes)
@@ -84,7 +84,7 @@ class PPOv6Trainer(BaseTrainer):
             )
 
             ordering = orderings[0]
-            partition = min_max_bottleneck_dp(nl, ordering, devices, layers, ts)
+            partition = min_sum_tpot_dp(nl, ordering, devices, layers, ts)
             tpot = compute_simple_tpot(partition, devices, layers, ts)
 
             reward = -tpot

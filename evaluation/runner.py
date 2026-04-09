@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from environment import DeviceCluster, LayerModel, create_random_config, compute_simple_tpot, compute_pipeline_tpot
-from baselines import dp_partition, dp_partition_raw_order, greedy_partition_advanced, beam_search_dp, min_max_bottleneck_dp
+from baselines import dp_partition, dp_partition_raw_order, greedy_partition_advanced, beam_search_dp, min_sum_tpot_dp
 
 from agents.dqn_v1 import dqn_v1_inference
 from agents.ppo_v2 import ppo_v2_inference
@@ -206,19 +206,23 @@ def run_evaluation(
                     print(f"  Evaluated {test_id} test cases...")
 
     # Compute aggregate stats
-    stats = _compute_stats(results)
+    eval_versions = getattr(eval_config, 'eval_versions', None) or ['v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7']
+    stats = _compute_stats(results, eval_versions)
     return results, stats
 
 
-def _compute_stats(results: list) -> dict:
+def _compute_stats(results: list, eval_versions=None) -> dict:
     """Compute aggregate statistics from test results."""
     if not results:
         return {}
 
+    if eval_versions is None:
+        eval_versions = ['v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7']
+
     stats = {}
     total = len(results)
 
-    for ver in ['v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'beam', 'dp', 'dp_raw', 'greedy']:
+    for ver in eval_versions + ['beam', 'dp', 'dp_raw', 'greedy']:
         tpots = [getattr(r, f'{ver}_tpot') for r in results if getattr(r, f'{ver}_tpot') < float('inf')]
         if not tpots:
             continue
@@ -251,7 +255,7 @@ def _compute_stats(results: list) -> dict:
             'dp_tpot': [r.dp_tpot for r in sub],
             'beam_tpot': [r.beam_tpot for r in sub],
         }
-        for ver in ['v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7']:
+        for ver in eval_versions:
             tpots = [getattr(r, f'{ver}_tpot') for r in sub]
             if tpots:
                 stats['by_num_layers'][nl][f'{ver}_tpot'] = tpots
@@ -263,7 +267,7 @@ def _compute_stats(results: list) -> dict:
             'dp_tpot': [r.dp_tpot for r in sub],
             'beam_tpot': [r.beam_tpot for r in sub],
         }
-        for ver in ['v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7']:
+        for ver in eval_versions:
             tpots = [getattr(r, f'{ver}_tpot') for r in sub]
             if tpots:
                 stats['by_num_devices'][nd][f'{ver}_tpot'] = tpots

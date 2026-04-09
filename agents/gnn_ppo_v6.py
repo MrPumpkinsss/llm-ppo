@@ -1,4 +1,4 @@
-"""V6: GNN-Based PPO + Edge-Conditioned Graph Conv + min-max DP.
+"""V6: GNN-Based PPO + Edge-Conditioned Graph Conv + sum-based TPOT DP.
 
 Devices form a complete graph with bandwidth as edge features.
 GNN processes the topology, pointer attention produces device ordering,
@@ -12,7 +12,7 @@ import torch.nn.functional as F
 from agents.shared import (
     MAX_DEVICES, MAX_LAYERS, build_observation,
 )
-from baselines import min_max_bottleneck_dp
+from baselines import min_sum_tpot_dp
 from environment import compute_simple_tpot
 
 
@@ -295,7 +295,7 @@ def ppo_v6_inference(
             num_devices, deterministic=True
         )
 
-    best_partition = min_max_bottleneck_dp(
+    best_partition = min_sum_tpot_dp(
         num_layers, greedy_orderings[0], devices, layers, tensor_size
     )
     best_tpot = compute_simple_tpot(best_partition, devices, layers, tensor_size)
@@ -313,7 +313,7 @@ def ppo_v6_inference(
             # Skip duplicate orderings
             if ordering == greedy_orderings[0]:
                 continue
-            partition = min_max_bottleneck_dp(num_layers, ordering, devices, layers, tensor_size)
+            partition = min_sum_tpot_dp(num_layers, ordering, devices, layers, tensor_size)
             tpot = compute_simple_tpot(partition, devices, layers, tensor_size)
 
             if tpot < best_tpot:

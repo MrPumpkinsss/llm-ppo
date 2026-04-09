@@ -113,12 +113,12 @@ def _dp_for_ordered_devices(
         return cum_costs[end] - cum_costs[start]
 
     dp_tpot = np.full((K + 1, N + 1), INF)
-    dp_max_comp = np.full((K + 1, N + 1), INF)
+    dp_sum_comp = np.full((K + 1, N + 1), INF)
     dp_total_transfer = np.full((K + 1, N + 1), INF)
     dp_parent = np.full((K + 1, N + 1), -1, dtype=int)
 
     dp_tpot[0][0] = 0.0
-    dp_max_comp[0][0] = 0.0
+    dp_sum_comp[0][0] = 0.0
     dp_total_transfer[0][0] = 0.0
 
     for k in range(1, K + 1):
@@ -127,21 +127,21 @@ def _dp_for_ordered_devices(
             if k == 1:
                 stage_comp = range_cost(0, i) / devices.compute_power[dev_idx]
                 dp_tpot[1][i] = stage_comp
-                dp_max_comp[1][i] = stage_comp
+                dp_sum_comp[1][i] = stage_comp
                 dp_total_transfer[1][i] = 0.0
                 dp_parent[1][i] = 0
             else:
                 prev_dev_idx = ordered_devices[k - 2]
                 for j in range(k - 1, i):
                     stage_comp = range_cost(j, i) / devices.compute_power[dev_idx]
-                    new_max_comp = max(dp_max_comp[k - 1][j], stage_comp)
+                    new_sum_comp = dp_sum_comp[k - 1][j] + stage_comp
                     new_transfer = dp_total_transfer[k - 1][j]
                     if j < i:
                         new_transfer += devices.transfer_time(prev_dev_idx, dev_idx, tensor_size)
-                    new_tpot = new_max_comp + new_transfer
+                    new_tpot = new_sum_comp + new_transfer
                     if new_tpot < dp_tpot[k][i]:
                         dp_tpot[k][i] = new_tpot
-                        dp_max_comp[k][i] = new_max_comp
+                        dp_sum_comp[k][i] = new_sum_comp
                         dp_total_transfer[k][i] = new_transfer
                         dp_parent[k][i] = j
 
@@ -159,9 +159,9 @@ def _dp_for_ordered_devices(
 
         last_dev = ordered_devices[k - 1]
         last_compute = range_cost(splits[k], N) / devices.compute_power[last_dev]
-        max_compute = max(dp_max_comp[k - 1][splits[k]], last_compute)
+        sum_compute = dp_sum_comp[k - 1][splits[k]] + last_compute
         total_transfer = dp_total_transfer[k - 1][splits[k]]
-        stop_tpot = max_compute + total_transfer
+        stop_tpot = sum_compute + total_transfer
 
         if stop_tpot < best_tpot:
             best_tpot = stop_tpot
@@ -208,14 +208,14 @@ def dp_partition_raw_order(
 
 # ==================== New baselines ====================
 
-def min_max_bottleneck_dp(
+def min_sum_tpot_dp(
     num_layers: int,
     ordered_devices: list,
     devices: DeviceCluster,
     layers: LayerModel,
     tensor_size: float = 1.0,
 ) -> list:
-    """Min-max bottleneck DP: minimizes max per-stage compute time.
+    """DP that minimizes sum(stage_compute) + sum(transfer) for sequential decode TPOT.
 
     Auto-selects the best number of devices to use.
     """
@@ -235,11 +235,11 @@ def min_max_bottleneck_dp(
     def range_cost(start, end):
         return cum_costs[end] - cum_costs[start]
 
-    dp_bottleneck = np.full((K + 1, N + 1), INF)
+    dp_sum_comp = np.full((K + 1, N + 1), INF)
     dp_transfer = np.full((K + 1, N + 1), INF)
     dp_parent = np.full((K + 1, N + 1), -1, dtype=int)
 
-    dp_bottleneck[0][0] = 0.0
+    dp_sum_comp[0][0] = 0.0
     dp_transfer[0][0] = 0.0
 
     for k in range(1, K + 1):
@@ -248,21 +248,21 @@ def min_max_bottleneck_dp(
         for i in range(k, N + 1):
             if k == 1:
                 stage_comp = range_cost(0, i) / power
-                dp_bottleneck[1][i] = stage_comp
+                dp_sum_comp[1][i] = stage_comp
                 dp_transfer[1][i] = 0.0
                 dp_parent[1][i] = 0
             else:
                 prev_dev_idx = ordered_devices[k - 2]
                 for j in range(k - 1, i):
                     stage_comp = range_cost(j, i) / power
-                    new_bottleneck = max(dp_bottleneck[k - 1][j], stage_comp)
+                    new_sum_comp = dp_sum_comp[k - 1][j] + stage_comp
                     new_transfer = dp_transfer[k - 1][j]
                     if j < i:
                         new_transfer += devices.transfer_time(prev_dev_idx, dev_idx, tensor_size)
-                    new_tpot = new_bottleneck + new_transfer
-                    cur_tpot = dp_bottleneck[k][i] + dp_transfer[k][i]
+                    new_tpot = new_sum_comp + new_transfer
+                    cur_tpot = dp_sum_comp[k][i] + dp_transfer[k][i]
                     if new_tpot < cur_tpot:
-                        dp_bottleneck[k][i] = new_bottleneck
+                        dp_sum_comp[k][i] = new_sum_comp
                         dp_transfer[k][i] = new_transfer
                         dp_parent[k][i] = j
 
@@ -281,9 +281,9 @@ def min_max_bottleneck_dp(
 
         last_dev = ordered_devices[k - 1]
         last_compute = range_cost(splits[k], N) / devices.compute_power[last_dev]
-        bottleneck = max(float(dp_bottleneck[k - 1][splits[k]]), last_compute)
+        sum_compute = float(dp_sum_comp[k - 1][splits[k]]) + last_compute
         transfer = float(dp_transfer[k - 1][splits[k]])
-        stop_tpot = bottleneck + transfer
+        stop_tpot = sum_compute + transfer
 
         if stop_tpot < best_tpot:
             best_tpot = stop_tpot
@@ -313,7 +313,7 @@ def beam_search_dp(
     tensor_size: float = 1.0,
     beam_width: int = 100,
 ) -> list:
-    """Beam Search over device orderings + min-max bottleneck DP.
+    """Beam Search over device orderings + sum-based TPOT DP.
 
     Each beam state = partial device ordering. At each step, expand each beam
     by adding each remaining device, run DP, keep top-K by TPOT.
@@ -333,7 +333,7 @@ def beam_search_dp(
     beam_parts = []
 
     for d in range(num_devices):
-        part = min_max_bottleneck_dp(num_layers, [d], devices, layers, tensor_size)
+        part = min_sum_tpot_dp(num_layers, [d], devices, layers, tensor_size)
         tpot = compute_simple_tpot(part, devices, layers, tensor_size)
         beam_tpot.append(tpot)
         beam_orders.append((d,))
@@ -362,7 +362,7 @@ def beam_search_dp(
                 if d in used:
                     continue
                 new_ordering = ordering + [d]
-                part = min_max_bottleneck_dp(
+                part = min_sum_tpot_dp(
                     num_layers, new_ordering, devices, layers, tensor_size
                 )
                 tpot = compute_simple_tpot(part, devices, layers, tensor_size)
@@ -403,7 +403,7 @@ def brute_force_optimal(
     best_tpot = float('inf')
 
     for perm in itertools.permutations(range(num_devices)):
-        part = min_max_bottleneck_dp(num_layers, list(perm), devices, layers, tensor_size)
+        part = min_sum_tpot_dp(num_layers, list(perm), devices, layers, tensor_size)
         tpot = compute_simple_tpot(part, devices, layers, tensor_size)
         if tpot < best_tpot:
             best_tpot = tpot

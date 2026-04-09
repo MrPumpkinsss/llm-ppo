@@ -1,4 +1,4 @@
-"""V3 Trainer: PPO-Clip one-shot ordering + min-max DP."""
+"""V3 Trainer: PPO-Clip one-shot ordering + sum-based TPOT DP."""
 import time
 import numpy as np
 import torch
@@ -13,12 +13,12 @@ from agents.shared import (
     MAX_DEVICES, MAX_LAYERS,
     build_observation, build_device_features,
 )
-from baselines import dp_partition, min_max_bottleneck_dp
+from baselines import dp_partition, min_sum_tpot_dp
 from environment import compute_simple_tpot
 
 
 class PPOv3Trainer(BaseTrainer):
-    """Trainer for V3: PPO-Clip one-shot ordering + min-max DP."""
+    """Trainer for V3: PPO-Clip one-shot ordering + sum-based TPOT DP."""
 
     def __init__(self, config):
         super().__init__(config, "V3-PPO-Order", max_minutes=config.max_training_minutes)
@@ -75,7 +75,7 @@ class PPOv3Trainer(BaseTrainer):
             )
 
             ordering = orderings[0]
-            partition = min_max_bottleneck_dp(nl, ordering, devices, layers, ts)
+            partition = min_sum_tpot_dp(nl, ordering, devices, layers, ts)
             tpot = compute_simple_tpot(partition, devices, layers, ts)
 
             # Relative reward: positive = better than DP-sorted baseline

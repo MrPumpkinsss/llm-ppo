@@ -1,4 +1,4 @@
-"""V3: PPO-Clip + One-Shot Ordering + min-max DP.
+"""V3: PPO-Clip + One-Shot Ordering + sum-based TPOT DP.
 
 Single forward pass produces a complete device ordering via pointer-network
 style attention. No autoregression -- the attention scores from one forward
@@ -13,7 +13,7 @@ from agents.shared import (
     MAX_DEVICES, MAX_LAYERS, get_obs_dim,
     build_observation, build_device_features,
 )
-from baselines import min_max_bottleneck_dp
+from baselines import min_sum_tpot_dp
 from environment import compute_simple_tpot
 
 
@@ -164,7 +164,7 @@ def ppo_v3_inference(
         )
 
     ordering = orderings[0]
-    partition = min_max_bottleneck_dp(num_layers, ordering, devices, layers, tensor_size)
+    partition = min_sum_tpot_dp(num_layers, ordering, devices, layers, tensor_size)
     tpot = compute_simple_tpot(partition, devices, layers, tensor_size)
 
     return partition, tpot

@@ -1,4 +1,4 @@
-"""V5 Trainer: Maskable PPO-Clip + sequential device selection + min-max DP."""
+"""V5 Trainer: Maskable PPO-Clip + sequential device selection + sum-based TPOT DP."""
 import json
 import os
 import time
@@ -15,12 +15,12 @@ from agents.maskable_ppo_v5 import (
 from agents.shared import (
     compute_reward, get_seq_obs_dim, MAX_DEVICES,
 )
-from baselines import min_max_bottleneck_dp
+from baselines import min_sum_tpot_dp
 from environment import compute_simple_tpot
 
 
 class MaskablePPOv5Trainer(BaseTrainer):
-    """Trainer for V5: Maskable PPO-Clip + min-max DP."""
+    """Trainer for V5: Maskable PPO-Clip + sum-based TPOT DP."""
 
     def __init__(self, config):
         super().__init__(config, "V5-MaskPPO", max_minutes=config.max_training_minutes)

@@ -168,7 +168,9 @@ Test grid: layers × devices = [16, 32, 48, 64] × [3, 5, 7, 10] with 3 seeds ea
 
 ## Known Issues
 
-**Single-device collapse problem**: When TPOT is modeled as `sum(stage_compute) + sum(transfer)`, the optimal solution always puts all layers on the single fastest device. This is because:
+### 1. Single-device collapse (current branch)
+
+When TPOT is modeled as `sum(stage_compute) + sum(transfer)`, the optimal solution always puts all layers on the single fastest device. This is because:
 1. By convexity, `total_cost / max_power` is always ≤ any multi-device split
 2. Additional devices only add positive transfer overhead
 3. The DP's auto-k selection always picks `k=1`, making device ordering irrelevant
@@ -176,6 +178,24 @@ Test grid: layers × devices = [16, 32, 48, 64] × [3, 5, 7, 10] with 3 seeds ea
 As a result, all methods (DP, Beam Search, Brute Force, V6, V7) converge to the same 0% gap — there is no room for RL to demonstrate improvement.
 
 **Planned fix**: Introduce device memory constraints (`memory_limit`) so that no single device can hold all layers, forcing multi-device placement and making the ordering problem meaningful. This will be addressed in the next few days.
+
+### 2. V7 reward oscillation
+
+In V7, we experimented with a relative reward formulation:
+```python
+reward = (dp_tpot - agent_tpot) / dp_tpot
+```
+The intention was to normalize rewards across different problem instances. However, this caused significant **training oscillation** because the observation space has high variance — different random configurations produce TPOT values spanning a wide range, making the relative reward signal noisy and unstable. V1–V6 use the simpler raw reward `reward = -tpot`, which trains more stably.
+
+### Working TPOT model
+
+If you want to see results with the pipeline-parallel TPOT model where the multi-device problem is well-defined:
+
+```
+TPOT = max(device_compute_times) + sum(boundary_transfer_times)
+```
+
+Check the **`v8` branch** — that version uses `max` instead of `sum` for device compute times, which correctly incentivizes load balancing across devices and produces meaningful differentiation between methods.
 
 ## Requirements
 

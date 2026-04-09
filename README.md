@@ -145,26 +145,11 @@ Test grid: layers × devices = [16, 32, 48, 64] × [3, 5, 7, 10] with 3 seeds ea
 
 ## Results
 
-### Training Curves
-![Training Curves](results/training_curves.png)
-
-### TPOT Comparison
-![TPOT Comparison](results/tpot_comparison.png)
-
-### Optimality Verification
-![Optimality Verification](results/optimality_verification.png)
-
 ### Summary Stats
 ![Summary Stats](results/summary_stats.png)
 
-### Scaling Analysis
-![Scaling Analysis](results/scaling_analysis.png)
-
 ### Scaling Sweep
 ![Scaling Sweep](results/scaling_sweep.png)
-
-### Pipeline Bubble Visualization
-![Pipeline Bubble](results/pipeline_bubble.png)
 
 ## Known Issues
 
